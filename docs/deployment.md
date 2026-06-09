@@ -53,7 +53,7 @@ npm run serve:logs
 npm run serve:stop
 ```
 
-`npm run serve` builds first, then starts `dist/app.js` under the PM2 process name `keepy`.
+`npm run serve` builds first, then starts `dist/index.js` under the PM2 process name `keepy`.
 
 ## Reverse Proxy Notes
 

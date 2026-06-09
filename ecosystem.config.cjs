@@ -2,7 +2,7 @@ module.exports = {
   apps: [
     {
       name: "keepy",
-      script: "dist/app.js",
+      script: "dist/index.js",
       cwd: __dirname,
       exec_mode: "fork",
       instances: 1,

@@ -1,5 +1,3 @@
-import { pathToFileURL } from "node:url";
-
 import cookieParser from "cookie-parser";
 import express from "express";
 
@@ -53,12 +51,5 @@ export async function start(runtime = createRuntime()): Promise<void> {
 
   runtime.app.listen(runtime.config.port, () => {
     console.log(`Keepy listening on http://localhost:${runtime.config.port}`);
-  });
-}
-
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  start().catch((error: unknown) => {
-    console.error(error);
-    process.exitCode = 1;
   });
 }
