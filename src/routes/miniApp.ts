@@ -8,6 +8,7 @@ import {
   renderLogin,
   renderSettings,
 } from "../features/miniApp/pages.js";
+import { getMonthRange } from "../lib/dates.js";
 import { readSessionValue, sessionCookieName } from "../lib/session.js";
 import {
   BookConflictError,
@@ -50,8 +51,8 @@ export function createMiniAppRouter(service: KeepyService, config: AppConfig): R
     try {
       service.updateBook(user.id, book.id, {
         currency: textBody(req, "currency"),
-        currentBalance: numberBody(req, "currentBalance"),
-        initialBalance: numberBody(req, "initialBalance"),
+        currentBalance: book.currentBalance,
+        initialBalance: book.initialBalance,
         monthlyBudget: numberBody(req, "monthlyBudget"),
         name: textBody(req, "name") ?? book.name,
       });
@@ -64,7 +65,7 @@ export function createMiniAppRouter(service: KeepyService, config: AppConfig): R
       throw error;
     }
 
-    res.redirect("/settings");
+    res.redirect(`/books/${book.id}`);
   });
 
   router.get("/books", (req: Request, res: Response) => {
@@ -131,13 +132,42 @@ export function createMiniAppRouter(service: KeepyService, config: AppConfig): R
     res.redirect("/books");
   });
 
+  router.get("/books/:bookId", (req: Request, res: Response) => {
+    const user = requireUser(req, res, service, config);
+    if (!user) {
+      return;
+    }
+
+    const bookId = Number(req.params.bookId);
+    if (!Number.isInteger(bookId)) {
+      res.status(400).send("账本无效。");
+      return;
+    }
+
+    const book = service.getBook(user.id, bookId);
+    if (!book) {
+      res.status(404).send("账本不存在。");
+      return;
+    }
+
+    const summary = service.getCurrentMonthSummary(user, book.id);
+    res.send(renderHome({ book, summary, user }));
+  });
+
   router.get("/history", (req: Request, res: Response) => {
     const user = requireUser(req, res, service, config);
     if (!user) {
       return;
     }
 
-    res.send(renderHistory({ groups: service.getHistory(user), user }));
+    const monthKey =
+      typeof req.query.month === "string"
+        ? req.query.month
+        : getMonthRange(new Date(), user.timezone).key;
+    const book = service.ensureDefaultBook(user.id);
+    const summary = service.getSummaryForMonthKey(user, book.id, monthKey);
+
+    res.send(renderHistory({ book, monthKey: summary.monthKey, summary, user }));
   });
 
   return router;

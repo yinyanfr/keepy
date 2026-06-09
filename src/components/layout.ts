@@ -7,20 +7,24 @@ export function appShell(input: {
   title: string;
   user: User;
 }): string {
-  const displayName = input.user.username
-    ? `@${input.user.username}`
-    : [input.user.firstName, input.user.lastName].filter(Boolean).join(" ") || "Keepy";
+  const fullName = [input.user.firstName, input.user.lastName].filter(Boolean).join(" ");
+  const displayName = fullName || (input.user.username ? `@${input.user.username}` : "Keepy");
+  const username = input.user.username && fullName ? `@${input.user.username}` : "";
 
   return page(
     input.title,
     `
+    ${themeBootScript()}
     <main class="app">
       <header class="topbar">
         <a class="brand" href="/">Keepy</a>
         <div class="topbar-actions">
           <div class="profile">
             ${avatar(input.user)}
-            <span>${escapeHtml(displayName)}</span>
+            <span class="profile-text">
+              <span class="profile-name">${escapeHtml(displayName)}</span>
+              ${username ? `<span class="profile-handle">${escapeHtml(username)}</span>` : ""}
+            </span>
           </div>
           <details class="menu">
             <summary aria-label="菜单">☰</summary>
@@ -29,6 +33,13 @@ export function appShell(input: {
               ${menuLink("/settings", "账本设置", input.active === "settings")}
               ${menuLink("/books", "账本列表", input.active === "books")}
               ${menuLink("/history", "历史记录", input.active === "history")}
+              <label class="theme-toggle">
+                <span>夜间模式</span>
+                <span class="switch">
+                  <input type="checkbox" data-theme-switch aria-label="夜间模式" />
+                  <span></span>
+                </span>
+              </label>
               <form method="post" action="/auth/logout">
                 <button type="submit">退出登录</button>
               </form>
@@ -39,6 +50,7 @@ export function appShell(input: {
       ${input.body}
     </main>
     ${style()}
+    ${themeToggleScript()}
     `,
   );
 }
@@ -55,6 +67,7 @@ export function loginPage(botUsername: string): string {
   return page(
     "Keepy 登录",
     `
+    ${themeBootScript()}
     <main class="login">
       <section>
         <h1>Keepy</h1>
@@ -97,6 +110,33 @@ function menuLink(href: string, label: string, active: boolean): string {
   return `<a class="${active ? "active" : ""}" href="${href}">${escapeHtml(label)}</a>`;
 }
 
+function themeBootScript(): string {
+  return `<script>
+    (() => {
+      const stored = localStorage.getItem("keepy-theme");
+      const systemDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+      const theme = stored || (systemDark ? "dark" : "light");
+      document.documentElement.dataset.theme = theme;
+    })();
+  </script>`;
+}
+
+function themeToggleScript(): string {
+  return `<script>
+    (() => {
+      const input = document.querySelector("[data-theme-switch]");
+      if (!input) return;
+      const apply = (theme) => {
+        document.documentElement.dataset.theme = theme;
+        localStorage.setItem("keepy-theme", theme);
+        input.checked = theme === "dark";
+      };
+      input.checked = document.documentElement.dataset.theme === "dark";
+      input.addEventListener("change", () => apply(input.checked ? "dark" : "light"));
+    })();
+  </script>`;
+}
+
 export function style(): string {
   return `<style>
     :root {
@@ -111,6 +151,26 @@ export function style(): string {
       --red: #b54545;
       --amber: #a26718;
       --shadow: 0 12px 32px rgba(31, 37, 35, 0.08);
+      --hover: #eaf3ee;
+      --subtle: #f7fbf8;
+      --progress-track: #dfe9e2;
+    }
+
+    :root[data-theme="dark"] {
+      color-scheme: dark;
+      --bg: #111615;
+      --panel: #19211f;
+      --ink: #edf4ef;
+      --muted: #9aa8a1;
+      --line: #2f3b37;
+      --green: #68c59c;
+      --green-strong: #91e1bb;
+      --red: #ff8f8f;
+      --amber: #e5b567;
+      --shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+      --hover: #22342f;
+      --subtle: #1e2a26;
+      --progress-track: #2a3b35;
     }
 
     * { box-sizing: border-box; }
@@ -160,15 +220,31 @@ export function style(): string {
       align-items: center;
       min-width: 0;
       gap: 8px;
-      color: var(--muted);
-      font-size: 14px;
+      color: var(--ink);
     }
 
-    .profile span:last-child {
-      max-width: 132px;
+    .profile-text {
+      display: grid;
+      min-width: 0;
+      max-width: 148px;
+      line-height: 1.15;
+    }
+
+    .profile-name, .profile-handle {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+
+    .profile-name {
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .profile-handle {
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 2px;
     }
 
     .profile img, .avatar-fallback {
@@ -177,7 +253,7 @@ export function style(): string {
       border-radius: 50%;
       display: grid;
       place-items: center;
-      background: #d9eadf;
+      background: var(--hover);
       color: var(--green-strong);
       font-weight: 700;
       flex: 0 0 auto;
@@ -227,8 +303,72 @@ export function style(): string {
     }
 
     .menu .active, .menu a:hover, .menu button:hover {
-      background: #eaf3ee;
+      background: var(--hover);
       color: var(--green-strong);
+    }
+
+    .theme-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 12px;
+      border-radius: 6px;
+      color: var(--ink);
+      cursor: pointer;
+    }
+
+    .theme-toggle:hover {
+      background: var(--hover);
+    }
+
+    .theme-toggle > span:first-child {
+      font-size: 14px;
+    }
+
+    .switch {
+      position: relative;
+      width: 38px;
+      height: 22px;
+      flex: 0 0 auto;
+    }
+
+    .switch input {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+    }
+
+    .switch span {
+      position: absolute;
+      inset: 0;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--bg);
+      transition: background 160ms ease, border-color 160ms ease;
+    }
+
+    .switch span::after {
+      content: "";
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--muted);
+      transition: transform 160ms ease, background 160ms ease;
+    }
+
+    .switch input:checked + span {
+      border-color: var(--green);
+      background: color-mix(in srgb, var(--green) 28%, transparent);
+    }
+
+    .switch input:checked + span::after {
+      transform: translateX(16px);
+      background: var(--green-strong);
     }
 
     .section-title {
@@ -250,6 +390,108 @@ export function style(): string {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 10px;
+    }
+
+    .summary-strip {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+
+    .summary-strip > summary {
+      list-style: none;
+    }
+
+    .summary-strip > summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .summary-mobile-trigger {
+      display: none;
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0;
+    }
+
+    .summary-strip:not([open]) > .summary-grid {
+      display: grid;
+    }
+
+    .summary-item {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      min-width: 0;
+      gap: 10px;
+      padding: 12px 14px;
+      border-top: 1px solid var(--line);
+    }
+
+    .summary-item:nth-child(-n+2) { border-top: 0; }
+    .summary-item:nth-child(odd) { border-right: 1px solid var(--line); }
+
+    .summary-item span {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .summary-mobile-metrics {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .summary-mobile-item {
+      display: grid;
+      min-width: 0;
+      gap: 2px;
+    }
+
+    .summary-mobile-item span {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .summary-mobile-item strong {
+      overflow: hidden;
+      color: var(--green-strong);
+      font-size: 18px;
+      line-height: 1.2;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .budget-progress {
+      display: block;
+      height: 7px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: var(--progress-track);
+    }
+
+    .budget-progress span {
+      display: block;
+      height: 100%;
+      border-radius: inherit;
+      background: var(--green);
+    }
+
+    .summary-item strong {
+      min-width: 0;
+      overflow: hidden;
+      color: var(--green-strong);
+      font-size: 18px;
+      text-align: right;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     .stat, .card, .form-panel, .bill-list, .empty {
@@ -295,6 +537,18 @@ export function style(): string {
       padding: 14px;
     }
 
+    .month-picker {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: end;
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+
     label {
       display: grid;
       gap: 6px;
@@ -308,7 +562,7 @@ export function style(): string {
       padding: 9px 10px;
       border: 1px solid var(--line);
       border-radius: 8px;
-      background: #fff;
+      background: var(--panel);
       color: var(--ink);
     }
 
@@ -331,7 +585,7 @@ export function style(): string {
 
     .button.secondary {
       border: 1px solid var(--line);
-      background: white;
+      background: var(--panel);
       color: var(--ink);
     }
 
@@ -345,6 +599,7 @@ export function style(): string {
     }
 
     .book-row:first-child { border-top: 0; }
+    .book-row:hover { background: var(--subtle); }
     .badge {
       padding: 4px 8px;
       border-radius: 999px;
@@ -394,7 +649,21 @@ export function style(): string {
     @media (max-width: 480px) {
       .app { padding: 14px 12px; }
       .stats { grid-template-columns: 1fr; }
-      .profile span:last-child { max-width: 92px; }
+      .summary-mobile-trigger {
+        display: grid;
+        gap: 10px;
+        padding: 12px 14px;
+        cursor: pointer;
+      }
+      .summary-grid {
+        border-top: 1px solid var(--line);
+      }
+      .summary-strip:not([open]) > .summary-grid { display: none; }
+      .summary-strip[open] .summary-mobile-trigger { background: var(--subtle); }
+      .summary-item { display: grid; gap: 4px; }
+      .summary-item strong { text-align: left; }
+      .month-picker { grid-template-columns: 1fr; }
+      .profile-text { max-width: 104px; }
       .section-title h1, .section-title h2 { font-size: 20px; }
     }
   </style>`;

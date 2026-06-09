@@ -1,7 +1,7 @@
 import { appShell, loginPage } from "../../components/layout.js";
 import { formatDateTime } from "../../lib/dates.js";
 import { escapeAttribute, escapeHtml } from "../../lib/html.js";
-import { formatAmount } from "../../lib/money.js";
+import { currencySymbol, formatAmount } from "../../lib/money.js";
 import type { AppConfig } from "../../configs/env.js";
 import type { Bill, Book, MonthSummary, User } from "../../services/keepyService.js";
 
@@ -19,19 +19,9 @@ export function renderHome(input: { book: Book; summary: MonthSummary; user: Use
     body: `
       <section class="section-title">
         <h1>${escapeHtml(book.name)} · ${escapeHtml(summary.monthKey)}</h1>
-        <span class="muted">${escapeHtml(book.currency || "无币种")}</span>
+        <span class="muted">${escapeHtml(currencySymbol(book.currency) || "无币种")}</span>
       </section>
-      <section class="stats">
-        ${stat("本月余额", formatAmount(summary.netBalance, book.currency))}
-        ${stat("累计消费", formatAmount(summary.expenseTotal, book.currency))}
-        ${stat("收入", formatAmount(summary.incomeTotal, book.currency))}
-        ${stat(
-          "预算余额",
-          summary.budgetRemaining === null
-            ? "未设置"
-            : formatAmount(summary.budgetRemaining, book.currency),
-        )}
-      </section>
+      ${summaryPanel(book, summary)}
       <section class="section-title">
         <h2>明细</h2>
       </section>
@@ -61,18 +51,6 @@ export function renderSettings(input: { book: Book; user: User }): string {
           币种
           <input name="currency" placeholder="例如 CNY、USD、¥" value="${escapeAttribute(
             book.currency ?? "",
-          )}" />
-        </label>
-        <label>
-          初始余额
-          <input name="initialBalance" inputmode="decimal" value="${escapeAttribute(
-            book.initialBalance ?? "",
-          )}" />
-        </label>
-        <label>
-          当前余额
-          <input name="currentBalance" inputmode="decimal" value="${escapeAttribute(
-            book.currentBalance ?? "",
           )}" />
         </label>
         <label>
@@ -126,13 +104,13 @@ export function renderBooks(input: { books: Book[]; user: User }): string {
         ${books
           .map(
             (book) => `
-              <div class="book-row">
+              <a class="book-row" href="/books/${book.id}">
                 <div>
                   <strong>${escapeHtml(book.name)}</strong>
                   <div class="bill-meta">${escapeHtml(book.currency || "无币种")}</div>
                 </div>
                 ${book.isDefault ? '<span class="badge">默认</span>' : ""}
-              </div>
+              </a>
             `,
           )
           .join("")}
@@ -161,10 +139,12 @@ export function renderBooks(input: { books: Book[]; user: User }): string {
 }
 
 export function renderHistory(input: {
-  groups: { bills: Bill[]; monthKey: string }[];
+  book: Book;
+  monthKey: string;
+  summary: MonthSummary;
   user: User;
 }): string {
-  const { groups, user } = input;
+  const { book, monthKey, summary, user } = input;
 
   return appShell({
     active: "history",
@@ -174,28 +154,68 @@ export function renderHistory(input: {
       <section class="section-title">
         <h1>历史记录</h1>
       </section>
-      ${
-        groups.length === 0
-          ? '<div class="empty">暂无历史记录</div>'
-          : groups
-              .map(
-                (group) => `
-                  <section class="section-title">
-                    <h2>${escapeHtml(group.monthKey)}</h2>
-                  </section>
-                  ${billList(group.bills, user.timezone)}
-                `,
-              )
-              .join("")
-      }
+      <form class="month-picker" method="get" action="/history">
+        <label>
+          月份
+          <input type="month" name="month" value="${escapeAttribute(monthKey)}" onchange="this.form.submit()" />
+        </label>
+        <button class="button secondary" type="submit">查看</button>
+      </form>
+      <section class="section-title">
+        <h2>${escapeHtml(book.name)} · ${escapeHtml(summary.monthKey)}</h2>
+        <span class="muted">${escapeHtml(currencySymbol(book.currency) || "无币种")}</span>
+      </section>
+      ${summary.bills.length === 0 ? '<div class="empty">无数据</div>' : billList(summary.bills, user.timezone)}
     `,
   });
 }
 
-function stat(label: string, value: string): string {
-  return `<div class="stat"><span class="muted">${escapeHtml(label)}</span><strong>${escapeHtml(
+function summaryPanel(book: Book, summary: MonthSummary): string {
+  const hasBudget = book.monthlyBudget !== null;
+  const budgetRemaining =
+    summary.budgetRemaining === null
+      ? "未设置"
+      : formatAmount(summary.budgetRemaining, book.currency);
+  const progress =
+    hasBudget && book.monthlyBudget && book.monthlyBudget > 0
+      ? Math.min(Math.max((summary.expenseTotal / book.monthlyBudget) * 100, 0), 100)
+      : null;
+
+  return `
+    <details class="summary-strip">
+      <summary class="summary-mobile-trigger">
+        <span class="summary-mobile-metrics">
+          ${mobileSummaryItem("累计消费", formatAmount(summary.expenseTotal, book.currency))}
+          ${hasBudget ? mobileSummaryItem("本月余额", budgetRemaining) : ""}
+        </span>
+        ${
+          progress === null
+            ? ""
+            : `<span class="budget-progress" aria-label="预算使用进度">
+                <span style="width: ${progress.toFixed(2)}%"></span>
+              </span>`
+        }
+      </summary>
+      <div class="summary-grid">
+        ${summaryItem("累计消费", formatAmount(summary.expenseTotal, book.currency))}
+        ${summaryItem("本月余额", budgetRemaining)}
+        ${summaryItem("收入", formatAmount(summary.incomeTotal, book.currency))}
+        ${summaryItem("净收支", formatAmount(summary.netBalance, book.currency))}
+      </div>
+    </details>
+  `;
+}
+
+function summaryItem(label: string, value: string): string {
+  return `<div class="summary-item"><span>${escapeHtml(label)}</span><strong>${escapeHtml(
     value,
   )}</strong></div>`;
+}
+
+function mobileSummaryItem(label: string, value: string): string {
+  return `<span class="summary-mobile-item"><span>${escapeHtml(label)}</span><strong>${escapeHtml(
+    value,
+  )}</strong></span>`;
 }
 
 function billList(bills: Bill[], timezone: string): string {
