@@ -322,36 +322,44 @@ function summaryPanel(book: Book, summary: MonthSummary, settingsUrl: string): s
       : null;
 
   return `
-    <details class="summary-strip">
+    <details class="summary-strip" data-summary-strip
+      data-currency="${escapeAttribute(book.currency ?? "")}"
+      data-monthly-budget="${escapeAttribute(book.monthlyBudget ?? "")}"
+      data-month-key="${escapeAttribute(summary.monthKey)}"
+      data-base-expense="${escapeAttribute(summary.expenseTotal)}"
+      data-base-income="${escapeAttribute(summary.incomeTotal)}"
+      data-base-net="${escapeAttribute(summary.netBalance)}">
       <summary class="summary-mobile-trigger">
         <span class="summary-mobile-metrics">
-          ${mobileSummaryItem("累计消费", escapeHtml(formatAmount(summary.expenseTotal, book.currency)))}
-          ${mobileSummaryItem("本月余额", budgetRemaining)}
+          ${mobileSummaryItem("累计消费", escapeHtml(formatAmount(summary.expenseTotal, book.currency)), "expense")}
+          ${mobileSummaryItem("本月余额", budgetRemaining, "budget")}
         </span>
         ${
           progress === null
             ? ""
             : `<span class="budget-progress" aria-label="预算使用进度">
-                <span style="width: ${progress.toFixed(2)}%"></span>
+                <span data-budget-progress style="width: ${progress.toFixed(2)}%"></span>
               </span>`
         }
       </summary>
       <div class="summary-grid">
-        ${summaryItem("累计消费", escapeHtml(formatAmount(summary.expenseTotal, book.currency)))}
-        ${summaryItem("本月余额", budgetRemaining)}
-        ${summaryItem("收入", escapeHtml(formatAmount(summary.incomeTotal, book.currency)))}
-        ${summaryItem("净收支", escapeHtml(formatAmount(summary.netBalance, book.currency)))}
+        ${summaryItem("累计消费", escapeHtml(formatAmount(summary.expenseTotal, book.currency)), "expense")}
+        ${summaryItem("本月余额", budgetRemaining, "budget")}
+        ${summaryItem("收入", escapeHtml(formatAmount(summary.incomeTotal, book.currency)), "income")}
+        ${summaryItem("净收支", escapeHtml(formatAmount(summary.netBalance, book.currency)), "net")}
       </div>
     </details>
   `;
 }
 
-function summaryItem(label: string, valueHtml: string): string {
-  return `<div class="summary-item"><span>${escapeHtml(label)}</span><strong>${valueHtml}</strong></div>`;
+function summaryItem(label: string, valueHtml: string, key?: string): string {
+  const data = key ? ` data-summary-item="${escapeAttribute(key)}"` : "";
+  return `<div class="summary-item"${data}><span>${escapeHtml(label)}</span><strong>${valueHtml}</strong></div>`;
 }
 
-function mobileSummaryItem(label: string, valueHtml: string): string {
-  return `<span class="summary-mobile-item"><span>${escapeHtml(label)}</span><strong>${valueHtml}</strong></span>`;
+function mobileSummaryItem(label: string, valueHtml: string, key?: string): string {
+  const data = key ? ` data-summary-item="${escapeAttribute(key)}"` : "";
+  return `<span class="summary-mobile-item"${data}><span>${escapeHtml(label)}</span><strong>${valueHtml}</strong></span>`;
 }
 
 function billList(bills: Bill[], timezone: string, returnTo: string): string {
@@ -375,7 +383,7 @@ function billList(bills: Bill[], timezone: string, returnTo: string): string {
         const currency = groupBills[0]?.currency ?? null;
 
         return `
-          <section class="day-group">
+          <section class="day-group" data-day-group="${escapeAttribute(label)}" data-base-day-expense="${escapeAttribute(dayExpense)}" data-currency="${escapeAttribute(currency ?? "")}">
             <h3 class="day-group-header">
               <span>${escapeHtml(label)}</span>
               <span class="day-total">${escapeHtml(formatAmount(dayExpense, currency))}</span>

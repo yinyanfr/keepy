@@ -67,6 +67,12 @@ self.addEventListener("sync", (event) => {
   }
 });
 
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "clear-offline-data") {
+    event.waitUntil(clearOfflineData());
+  }
+});
+
 async function cacheFirst(request, cacheName) {
   const cached = await caches.match(request);
   if (cached) {
@@ -169,6 +175,8 @@ async function readAllPendingBills() {
     const request = transaction.objectStore("pendingBills").getAll();
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
+    transaction.oncomplete = () => db.close();
+    transaction.onerror = () => db.close();
   });
 }
 
@@ -179,5 +187,20 @@ async function deletePendingBill(clientId) {
     const request = transaction.objectStore("pendingBills").delete(clientId);
     request.onsuccess = () => resolve();
     request.onerror = () => reject(request.error);
+    transaction.oncomplete = () => db.close();
+    transaction.onerror = () => db.close();
+  });
+}
+
+async function clearOfflineData() {
+  const keys = await caches.keys();
+  await Promise.all(
+    keys.filter((key) => key.startsWith("keepy-")).map((key) => caches.delete(key)),
+  );
+  await new Promise((resolve, reject) => {
+    const request = indexedDB.deleteDatabase(DB_NAME);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+    request.onblocked = () => resolve();
   });
 }

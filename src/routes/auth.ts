@@ -38,6 +38,7 @@ export function createAuthRouter(service: KeepyService, config: AppConfig): Rout
   });
 
   router.post("/auth/logout", (_req: Request, res: Response) => {
+    res.setHeader("Clear-Site-Data", '"cache", "storage"');
     res.clearCookie(sessionCookieName);
     res.redirect("/");
   });

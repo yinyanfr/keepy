@@ -15,7 +15,7 @@ export function appShell(input: {
     input.title,
     `
     ${themeBootScript()}
-    <main class="app">
+    <main class="app" data-time-zone="${escapeAttribute(input.user.timezone)}">
       <header class="topbar">
         <a class="brand" href="/">Keepy</a>
         <div class="topbar-actions">
