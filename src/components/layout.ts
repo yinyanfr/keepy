@@ -153,6 +153,14 @@ function miniAppInteractionScript(): string {
           const dialog = document.getElementById(closeTarget.dataset.dialogClose);
           if (dialog && typeof dialog.close === "function") dialog.close();
         }
+
+        const deleteToggle = event.target.closest("[data-delete-toggle]");
+        if (deleteToggle) {
+          const app = document.querySelector(".app");
+          const enabled = app && app.dataset.deleteMode !== "true";
+          if (app) app.dataset.deleteMode = enabled ? "true" : "false";
+          deleteToggle.setAttribute("aria-pressed", enabled ? "true" : "false");
+        }
       });
 
       for (const dialog of document.querySelectorAll("dialog")) {
@@ -160,6 +168,28 @@ function miniAppInteractionScript(): string {
           if (event.target === dialog) dialog.close();
         });
       }
+
+      document.addEventListener("submit", (event) => {
+        const form = event.target;
+        if (!(form instanceof HTMLFormElement)) return;
+        const message = form.dataset.confirm;
+        if (message && !window.confirm(message)) {
+          event.preventDefault();
+          return;
+        }
+
+        if (!form.matches("[data-once-form]")) return;
+        if (form.dataset.submitted === "true") {
+          event.preventDefault();
+          return;
+        }
+
+        form.dataset.submitted = "true";
+        form.querySelectorAll("button[type='submit']").forEach((button) => {
+          button.disabled = true;
+          button.setAttribute("aria-busy", "true");
+        });
+      });
 
       const focus = document.querySelector("[data-pie-focus]");
       const showSlice = (element) => {
@@ -230,6 +260,11 @@ export function style(): string {
     a { color: inherit; text-decoration: none; }
     button, input, select {
       font: inherit;
+    }
+
+    button:disabled {
+      cursor: wait;
+      opacity: 0.62;
     }
 
     .app {
@@ -427,6 +462,13 @@ export function style(): string {
     .section-title h1, .section-title h2 {
       margin: 0;
       font-size: 22px;
+    }
+
+    .title-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 0 0 auto;
     }
 
     .title-row h1 {
@@ -638,6 +680,10 @@ export function style(): string {
       padding: 10px 12px;
     }
 
+    .app[data-delete-mode="true"] .compact-bill {
+      grid-template-columns: minmax(0, 1fr) auto auto auto;
+    }
+
     .compact-bill .bill-purpose {
       overflow: hidden;
       text-overflow: ellipsis;
@@ -650,8 +696,41 @@ export function style(): string {
       white-space: nowrap;
     }
 
-    .amount.expense { color: var(--red); }
+    .amount.expense { color: var(--ink); }
     .amount.income { color: var(--green); }
+
+    .bill-delete-form {
+      display: none;
+      margin: 0;
+    }
+
+    .app[data-delete-mode="true"] .bill-delete-form {
+      display: block;
+    }
+
+    [data-delete-toggle][aria-pressed="true"] {
+      border-color: var(--green);
+      background: var(--hover);
+      color: var(--green-strong);
+    }
+
+    .bill-delete {
+      width: 30px;
+      height: 30px;
+      border-color: transparent;
+      color: var(--muted);
+      background: transparent;
+    }
+
+    .bill-delete:hover {
+      color: var(--ink);
+      background: var(--hover);
+    }
+
+    .bill-delete svg {
+      width: 16px;
+      height: 16px;
+    }
 
     .form-panel {
       display: grid;
@@ -836,6 +915,11 @@ export function style(): string {
       background: rgba(0, 0, 0, 0.42);
     }
 
+    .month-dialog {
+      width: min(calc(100vw - 32px), 380px);
+      max-width: calc(100vw - 32px);
+    }
+
     .dialog-card {
       width: min(calc(100vw - 32px), 360px);
       display: grid;
@@ -852,7 +936,9 @@ export function style(): string {
     }
 
     .month-dialog-card {
-      width: min(calc(100vw - 32px), 380px);
+      width: 100%;
+      max-width: 100%;
+      overflow: hidden;
     }
 
     .month-dialog-head {
@@ -876,9 +962,11 @@ export function style(): string {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 8px;
+      min-width: 0;
     }
 
     .month-grid a {
+      min-width: 0;
       min-height: 48px;
       display: grid;
       place-items: center;
@@ -1069,12 +1157,29 @@ export function style(): string {
       .summary-item { display: grid; gap: 4px; }
       .summary-item strong { text-align: left; }
       .month-picker { grid-template-columns: 1fr; }
+      .month-dialog {
+        width: calc(100vw - 28px);
+        max-width: calc(100vw - 28px);
+      }
+      .month-dialog-card {
+        gap: 10px;
+        padding: 14px;
+      }
+      .month-grid {
+        gap: 6px;
+      }
+      .month-grid a {
+        min-height: 44px;
+      }
       .profile-text { max-width: 104px; }
       .section-title h1, .section-title h2 { font-size: 20px; }
       .compact-bill {
         grid-template-columns: minmax(0, 1fr) auto auto;
         gap: 8px;
         padding: 9px 10px;
+      }
+      .app[data-delete-mode="true"] .compact-bill {
+        grid-template-columns: minmax(0, 1fr) auto auto auto;
       }
       .amount {
         font-size: 15px;

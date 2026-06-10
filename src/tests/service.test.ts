@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { isLedgerParseSuccess, parseLedgerMessage } from "../lib/money.js";
 import { getMonthRange } from "../lib/dates.js";
 import {
+  BillNotFoundError,
   BookConflictError,
   BookDeleteError,
   BookNotFoundError,
@@ -239,6 +240,67 @@ test("records bills into the specified book only", () => {
 
   assert.equal(service.getCurrentMonthSummary(user, defaultBook.id).billCount, 0);
   assert.equal(service.getCurrentMonthSummary(user, travel.id).billCount, 1);
+
+  service.close();
+});
+
+test("deduplicates mini app bill submissions by idempotency key", () => {
+  const service = KeepyService.fromPath(":memory:");
+  const { user, defaultBook } = service.ensureUser({
+    firstName: "Yan",
+    lastName: null,
+    photoUrl: null,
+    telegramId: 1011,
+    username: "yan",
+  });
+
+  const first = service.recordBillForBookOnce(
+    user,
+    defaultBook.id,
+    6,
+    "吃饭",
+    "same-submit",
+    new Date("2026-06-10T04:00:00.000Z"),
+  );
+  const second = service.recordBillForBookOnce(
+    user,
+    defaultBook.id,
+    6,
+    "吃饭",
+    "same-submit",
+    new Date("2026-06-10T04:00:00.000Z"),
+  );
+
+  assert.equal(first.bill.id, second.bill.id);
+  assert.equal(service.getCurrentMonthSummary(user, defaultBook.id).billCount, 1);
+
+  service.close();
+});
+
+test("deletes a single bill and restores current balance", () => {
+  const service = KeepyService.fromPath(":memory:");
+  const { user, defaultBook } = service.ensureUser({
+    firstName: "Yan",
+    lastName: null,
+    photoUrl: null,
+    telegramId: 1012,
+    username: "yan",
+  });
+  const book = service.updateBook(user.id, defaultBook.id, {
+    currency: "CNY",
+    currentBalance: 100,
+    initialBalance: 100,
+    monthlyBudget: null,
+    name: "默认",
+  });
+  const { bill } = service.recordBillForBook(user, book.id, 6, "吃饭");
+
+  assert.equal(service.getBook(user.id, book.id)?.currentBalance, 94);
+  service.deleteBill(user.id, bill.id);
+
+  assert.equal(service.getBook(user.id, book.id)?.currentBalance, 100);
+  assert.equal(service.getCurrentMonthSummary(user, book.id).billCount, 0);
+  assert.throws(() => service.deleteBill(user.id, bill.id), BillNotFoundError);
 
   service.close();
 });

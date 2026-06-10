@@ -102,6 +102,10 @@ interface SpendingCategoryRow {
   purpose: string;
 }
 
+interface BillSubmissionRow {
+  bill_id: number;
+}
+
 export interface UpdateBookInput {
   currency: string | null;
   currentBalance: number | null;
@@ -128,6 +132,13 @@ export class BookDeleteError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "BookDeleteError";
+  }
+}
+
+export class BillNotFoundError extends Error {
+  constructor(message = "Bill not found.") {
+    super(message);
+    this.name = "BillNotFoundError";
   }
 }
 
@@ -452,6 +463,80 @@ export class KeepyService {
     return this.createBill(user, book, amount, purpose, occurredAt);
   }
 
+  recordBillForBookOnce(
+    user: User,
+    bookId: number,
+    amount: number,
+    purpose: string,
+    idempotencyKey: string,
+    occurredAt = new Date(),
+  ): { bill: Bill; book: Book } {
+    const book = this.getBook(user.id, bookId);
+    if (!book) {
+      throw new BookNotFoundError();
+    }
+
+    const cleanedKey = cleanName(idempotencyKey);
+    const create = this.db.transaction(() => {
+      const existing = this.db
+        .prepare<
+          [number, string],
+          BillSubmissionRow
+        >("SELECT bill_id FROM bill_submissions WHERE user_id = ? AND idempotency_key = ?")
+        .get(user.id, cleanedKey);
+      if (existing) {
+        return existing.bill_id;
+      }
+
+      const now = new Date().toISOString();
+      const billId = this.insertBill(user, book, amount, purpose, occurredAt, now);
+      this.db
+        .prepare(
+          `
+          INSERT INTO bill_submissions (user_id, idempotency_key, bill_id, created_at)
+          VALUES (?, ?, ?, ?)
+        `,
+        )
+        .run(user.id, cleanedKey, billId, now);
+      return billId;
+    });
+
+    const bill = this.getBill(create());
+    const updatedBook = this.getBook(user.id, book.id);
+    if (!bill || !updatedBook) {
+      throw new Error("Failed to load created bill.");
+    }
+
+    return { bill, book: updatedBook };
+  }
+
+  deleteBill(userId: number, billId: number): { bookId: number } {
+    const bill = this.getBill(billId);
+    if (!bill || bill.userId !== userId) {
+      throw new BillNotFoundError();
+    }
+
+    const book = this.getBook(userId, bill.bookId);
+    if (!book) {
+      throw new BookNotFoundError();
+    }
+
+    const now = new Date().toISOString();
+    const remove = this.db.transaction(() => {
+      this.db.prepare("DELETE FROM bills WHERE user_id = ? AND id = ?").run(userId, billId);
+      if (book.currentBalance !== null) {
+        this.db
+          .prepare(
+            "UPDATE books SET current_balance = current_balance + ?, updated_at = ? WHERE id = ?",
+          )
+          .run(bill.amount, now, book.id);
+      }
+    });
+
+    remove();
+    return { bookId: bill.bookId };
+  }
+
   getBill(billId: number): Bill | null {
     const row = this.db
       .prepare<[number], BillRow>(
@@ -644,27 +729,9 @@ export class KeepyService {
     occurredAt: Date,
   ): { bill: Bill; book: Book } {
     const now = new Date().toISOString();
-    const cleanedPurpose = cleanName(purpose);
 
     const create = this.db.transaction(() => {
-      const result = this.db
-        .prepare(
-          `
-          INSERT INTO bills (user_id, book_id, amount, purpose, occurred_at, created_at)
-          VALUES (?, ?, ?, ?, ?, ?)
-        `,
-        )
-        .run(user.id, book.id, amount, cleanedPurpose, occurredAt.toISOString(), now);
-
-      if (book.currentBalance !== null) {
-        this.db
-          .prepare(
-            "UPDATE books SET current_balance = current_balance - ?, updated_at = ? WHERE id = ?",
-          )
-          .run(amount, now, book.id);
-      }
-
-      return Number(result.lastInsertRowid);
+      return this.insertBill(user, book, amount, purpose, occurredAt, now);
     });
 
     const bill = this.getBill(create());
@@ -674,6 +741,34 @@ export class KeepyService {
     }
 
     return { bill, book: updatedBook };
+  }
+
+  private insertBill(
+    user: User,
+    book: Book,
+    amount: number,
+    purpose: string,
+    occurredAt: Date,
+    now: string,
+  ): number {
+    const result = this.db
+      .prepare(
+        `
+        INSERT INTO bills (user_id, book_id, amount, purpose, occurred_at, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `,
+      )
+      .run(user.id, book.id, amount, cleanName(purpose), occurredAt.toISOString(), now);
+
+    if (book.currentBalance !== null) {
+      this.db
+        .prepare(
+          "UPDATE books SET current_balance = current_balance - ?, updated_at = ? WHERE id = ?",
+        )
+        .run(amount, now, book.id);
+    }
+
+    return Number(result.lastInsertRowid);
   }
 }
 

@@ -5,6 +5,7 @@ import test from "node:test";
 import { createSessionValue, sessionCookieName } from "../lib/session.js";
 import { createMiniAppRouter } from "../routes/miniApp.js";
 import {
+  BillNotFoundError,
   BookConflictError,
   BookDeleteError,
   BookNotFoundError,
@@ -110,18 +111,18 @@ test("returns 400 when deleting the default book", async () => {
   assert.match(response.text, /默认账本不能删除/);
 });
 
-test("records positive and negative amounts from the mini app form", async () => {
-  const amounts: number[] = [];
+test("records positive and negative amounts from the mini app form with an idempotency key", async () => {
+  const submissions: Array<{ amount: number; key: string }> = [];
   const app = buildTestApp({
-    recordBillForBook: (_user, _bookId, amount) => {
-      amounts.push(amount);
+    recordBillForBookOnce: (_user, _bookId, amount, _purpose, key) => {
+      submissions.push({ amount, key });
       return {
         bill: {
           amount,
           bookId: 1,
           bookName: "默认",
           currency: null,
-          id: amounts.length,
+          id: submissions.length,
           occurredAt: new Date(),
           purpose: "饮料",
           userId: 1,
@@ -131,10 +132,52 @@ test("records positive and negative amounts from the mini app form", async () =>
     },
   });
 
-  await post(app, "/books/1/bills", "amount=12&purpose=%E9%A5%AE%E6%96%99", "manual");
-  await post(app, "/books/1/bills", "amount=-8&purpose=%E9%80%80%E6%AC%BE", "manual");
+  await post(
+    app,
+    "/books/1/bills",
+    "amount=12&purpose=%E9%A5%AE%E6%96%99&idempotencyKey=abc",
+    "manual",
+  );
+  await post(
+    app,
+    "/books/1/bills",
+    "amount=-8&purpose=%E9%80%80%E6%AC%BE&idempotencyKey=def",
+    "manual",
+  );
 
-  assert.deepEqual(amounts, [12, -8]);
+  assert.deepEqual(submissions, [
+    { amount: 12, key: "abc" },
+    { amount: -8, key: "def" },
+  ]);
+});
+
+test("deletes a bill and redirects back to the current page", async () => {
+  let deletedBillId: number | null = null;
+  const app = buildTestApp({
+    deleteBill: (_userId, billId) => {
+      deletedBillId = billId;
+      return { bookId: 1 };
+    },
+  });
+
+  const response = await post(app, "/bills/9/delete", "returnTo=%2Fbooks%2F1%3Fpage%3D2", "manual");
+
+  assert.equal(deletedBillId, 9);
+  assert.equal(response.status, 302);
+  assert.equal(response.location, "/books/1?page=2");
+});
+
+test("returns 404 when deleting a missing bill", async () => {
+  const app = buildTestApp({
+    deleteBill: () => {
+      throw new BillNotFoundError();
+    },
+  });
+
+  const response = await post(app, "/bills/999/delete", "", "manual");
+
+  assert.equal(response.status, 404);
+  assert.match(response.text, /记录不存在/);
 });
 
 test("uses bookId and month query params on the history page", async () => {
@@ -193,7 +236,21 @@ function buildTestApp(overrides: Partial<KeepyService>): express.Express {
     }),
     listBooks: () => [defaultBook],
     listPurposes: () => [],
+    deleteBill: () => ({ bookId: 1 }),
     recordBillForBook: () => ({
+      bill: {
+        amount: 1,
+        bookId: 1,
+        bookName: "默认",
+        currency: null,
+        id: 1,
+        occurredAt: new Date(),
+        purpose: "默认",
+        userId: 1,
+      },
+      book: defaultBook,
+    }),
+    recordBillForBookOnce: () => ({
       bill: {
         amount: 1,
         bookId: 1,

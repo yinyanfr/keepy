@@ -135,7 +135,7 @@ export function createKeepyBot(service: KeepyService, config: AppConfig): Bot {
 
 function miniAppReplyOptions(): { reply_markup: InlineKeyboard } {
   return {
-    reply_markup: new InlineKeyboard().webApp("打开 Mini App", telegramMiniAppUrl),
+    reply_markup: new InlineKeyboard().url("打开 Mini App", telegramMiniAppUrl),
   };
 }
 

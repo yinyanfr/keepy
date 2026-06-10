@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { Router, type Request, type Response } from "express";
 
 import type { AppConfig } from "../configs/env.js";
@@ -11,6 +13,7 @@ import {
 import { getMonthRange, monthRangeFromKey } from "../lib/dates.js";
 import { readSessionValue, sessionCookieName } from "../lib/session.js";
 import {
+  BillNotFoundError,
   BookConflictError,
   BookDeleteError,
   BookNotFoundError,
@@ -222,11 +225,42 @@ export function createMiniAppRouter(service: KeepyService, config: AppConfig): R
     }
 
     try {
-      service.recordBillForBook(user, bookId, amount, purpose);
+      service.recordBillForBookOnce(
+        user,
+        bookId,
+        amount,
+        purpose,
+        textBody(req, "idempotencyKey") ?? randomUUID(),
+      );
       res.redirect(`/books/${bookId}`);
     } catch (error) {
       if (error instanceof BookNotFoundError) {
         res.status(404).send("账本不存在。");
+        return;
+      }
+
+      throw error;
+    }
+  });
+
+  router.post("/bills/:billId/delete", (req: Request, res: Response) => {
+    const user = requireUser(req, res, service, config);
+    if (!user) {
+      return;
+    }
+
+    const billId = numberParam(req.params.billId);
+    if (billId === null) {
+      res.status(400).send("记录无效。");
+      return;
+    }
+
+    try {
+      const result = service.deleteBill(user.id, billId);
+      res.redirect(returnTo(req) ?? `/books/${result.bookId}`);
+    } catch (error) {
+      if (error instanceof BillNotFoundError) {
+        res.status(404).send("记录不存在。");
         return;
       }
 
@@ -257,7 +291,16 @@ export function createMiniAppRouter(service: KeepyService, config: AppConfig): R
     const pageSize = queryNumber(req.query.pageSize, 20);
     const summary = service.getMonthSummary(user.id, book.id, range);
     const bills = service.listBillsForRangePaginated(user.id, book.id, range, page, pageSize);
-    res.send(renderHome({ bills, book, purposes: service.listPurposes(user.id), summary, user }));
+    res.send(
+      renderHome({
+        billSubmissionKey: randomUUID(),
+        bills,
+        book,
+        purposes: service.listPurposes(user.id),
+        summary,
+        user,
+      }),
+    );
   });
 
   router.get("/history", (req: Request, res: Response) => {
@@ -365,4 +408,13 @@ function queryNumber(value: unknown, fallback: number): number {
 
   const parsed = Number(value);
   return Number.isInteger(parsed) ? parsed : fallback;
+}
+
+function returnTo(req: Request): string | null {
+  const value = textBody(req, "returnTo");
+  if (!value || !value.startsWith("/") || value.startsWith("//")) {
+    return null;
+  }
+
+  return value;
 }

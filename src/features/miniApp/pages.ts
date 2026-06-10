@@ -17,13 +17,14 @@ export function renderLogin(config: AppConfig): string {
 }
 
 export function renderHome(input: {
+  billSubmissionKey: string;
   bills: PaginatedBills;
   book: Book;
   purposes: string[];
   summary: MonthSummary;
   user: User;
 }): string {
-  const { bills, book, purposes, summary, user } = input;
+  const { billSubmissionKey, bills, book, purposes, summary, user } = input;
   const bookUrl = `/books/${book.id}`;
   const settingsUrl = `${bookUrl}/settings`;
   const historyUrl = `/history?bookId=${book.id}&month=${encodeURIComponent(summary.monthKey)}`;
@@ -40,11 +41,14 @@ export function renderHome(input: {
       ${summaryPanel(book, summary, settingsUrl)}
       <section class="section-title details-title">
         <h2>明细</h2>
-        <a class="icon-button" href="${historyUrl}" aria-label="历史图表">${chartIcon()}</a>
+        <span class="title-actions">
+          <button class="icon-button" type="button" data-delete-toggle aria-label="编辑明细" aria-pressed="false">${editIcon()}</button>
+          <a class="icon-button" href="${historyUrl}" aria-label="历史图表">${chartIcon()}</a>
+        </span>
       </section>
-      ${billList(bills.items, user.timezone)}
+      ${billList(bills.items, user.timezone, bookUrl)}
       ${pagination(bookUrl, bills)}
-      ${fabDrawer(book, purposes)}
+      ${fabDrawer(book, purposes, billSubmissionKey)}
     `,
   });
 }
@@ -210,7 +214,15 @@ export function renderHistory(input: {
         <span class="muted">${escapeHtml(currencyLabel(book))}</span>
       </section>
       ${pieChart(categories, book.currency)}
-      ${summary.bills.length === 0 ? '<div class="empty">无数据</div>' : billList(summary.bills, user.timezone)}
+      ${
+        summary.bills.length === 0
+          ? '<div class="empty">无数据</div>'
+          : billList(
+              summary.bills,
+              user.timezone,
+              historyUrl(book.id, ...monthParts(summary.monthKey)),
+            )
+      }
     `,
   });
 }
@@ -272,6 +284,11 @@ function historyUrl(bookId: number, year: number, month: number): string {
   return `/history?bookId=${bookId}&month=${encodeURIComponent(monthKey)}`;
 }
 
+function monthParts(monthKey: string): [number, number] {
+  const { month, year } = parseMonthKey(monthKey);
+  return [year, month];
+}
+
 function summaryPanel(book: Book, summary: MonthSummary, settingsUrl: string): string {
   const hasBudget = book.monthlyBudget !== null;
   const budgetRemaining =
@@ -316,7 +333,7 @@ function mobileSummaryItem(label: string, valueHtml: string): string {
   return `<span class="summary-mobile-item"><span>${escapeHtml(label)}</span><strong>${valueHtml}</strong></span>`;
 }
 
-function billList(bills: Bill[], timezone: string): string {
+function billList(bills: Bill[], timezone: string, returnTo: string): string {
   if (bills.length === 0) {
     return '<div class="empty">暂无明细</div>';
   }
@@ -343,6 +360,11 @@ function billList(bills: Bill[], timezone: string): string {
                       <strong class="amount ${bill.amount > 0 ? "expense" : "income"}">${escapeHtml(
                         formatAmount(bill.amount, bill.currency),
                       )}</strong>
+                      <form class="bill-delete-form" method="post" action="/bills/${bill.id}/delete"
+                        data-confirm="删除这条记录？" data-once-form>
+                        <input type="hidden" name="returnTo" value="${escapeAttribute(returnTo)}" />
+                        <button class="icon-button bill-delete" type="submit" aria-label="删除记录">${trashIcon()}</button>
+                      </form>
                     </div>
                   `,
                 )
@@ -396,12 +418,13 @@ function pageLink(
   )}</a>`;
 }
 
-function fabDrawer(book: Book, purposes: string[]): string {
+function fabDrawer(book: Book, purposes: string[], idempotencyKey: string): string {
   const datalistId = `purposes-${book.id}`;
   return `
     <button class="fab" type="button" data-dialog-open="bill-drawer" aria-label="新增记账">${plusIcon()}</button>
     <dialog class="drawer" id="bill-drawer">
-      <form class="drawer-panel" method="post" action="/books/${book.id}/bills">
+      <form class="drawer-panel" method="post" action="/books/${book.id}/bills" data-once-form>
+        <input type="hidden" name="idempotencyKey" value="${escapeAttribute(idempotencyKey)}" />
         <div class="drawer-handle"></div>
         <section class="section-title">
           <h2>新增记账</h2>
@@ -508,4 +531,8 @@ function chartIcon(): string {
 
 function plusIcon(): string {
   return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>`;
+}
+
+function trashIcon(): string {
+  return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M6 6l1 14h10l1-14"></path><path d="M10 11v5"></path><path d="M14 11v5"></path></svg>`;
 }
