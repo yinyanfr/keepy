@@ -78,7 +78,12 @@ export function createMiniAppRouter(service: KeepyService, config: AppConfig): R
       return;
     }
 
-    res.send(renderBooks({ books: service.listBooks(user.id), user }));
+    const books = service.listBooks(user.id).map((book) => ({
+      book,
+      summary: service.getCurrentMonthSummary(user, book.id),
+    }));
+
+    res.send(renderBooks({ books, user }));
   });
 
   router.post("/books", (req: Request, res: Response) => {

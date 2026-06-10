@@ -1,6 +1,7 @@
 export interface LedgerParseSuccess {
   amount: number;
   bookName: string | null;
+  bookNames?: string[];
   purpose: string;
   rawAmount: string;
 }
@@ -66,6 +67,23 @@ export function parseLedgerMessage(text: string, knownBookNames: string[]): Ledg
     };
   }
 
+  if (parts.length >= 3) {
+    const requestedBookNames = unique(parts.slice(1));
+    const missingBookNames = requestedBookNames.filter((name) => !knownBookNames.includes(name));
+
+    if (missingBookNames.length > 0) {
+      return { error: `账本不存在：${missingBookNames.join("、")}` };
+    }
+
+    return {
+      amount,
+      bookName: requestedBookNames[0] ?? null,
+      bookNames: requestedBookNames,
+      purpose: parts[0] ?? "默认",
+      rawAmount,
+    };
+  }
+
   const lastPart = parts.at(-1);
   const matchedBookName = knownBookNames.find((name) => name === lastPart);
 
@@ -102,4 +120,8 @@ export function currencySymbol(currency: string | null): string {
   }
 
   return currencySymbols.get(normalized.toUpperCase()) ?? normalized;
+}
+
+function unique(values: string[]): string[] {
+  return [...new Set(values)];
 }

@@ -65,6 +65,27 @@ export interface SpendingCategory {
   purpose: string;
 }
 
+export type BotEntryStatus = "invalid" | "valid";
+
+export interface BotEntry {
+  chatId: string;
+  createdAt: Date;
+  firstBillAt: Date | null;
+  id: number;
+  lastError: string | null;
+  messageId: number;
+  rawText: string;
+  status: BotEntryStatus;
+  updatedAt: Date;
+  userId: number;
+}
+
+export interface BotBillInput {
+  amount: number;
+  bookId: number;
+  purpose: string;
+}
+
 interface UserRow {
   first_name: string | null;
   id: number;
@@ -103,6 +124,23 @@ interface SpendingCategoryRow {
 }
 
 interface BillSubmissionRow {
+  bill_id: number;
+}
+
+interface BotEntryRow {
+  chat_id: string;
+  created_at: string;
+  first_bill_at: string | null;
+  id: number;
+  last_error: string | null;
+  message_id: number;
+  raw_text: string;
+  status: BotEntryStatus;
+  updated_at: string;
+  user_id: number;
+}
+
+interface BotEntryBillRow {
   bill_id: number;
 }
 
@@ -162,7 +200,8 @@ export class KeepyService {
         .prepare(
           `
           UPDATE users
-          SET username = ?, first_name = ?, last_name = ?, photo_url = ?, updated_at = ?
+          SET username = ?, first_name = ?, last_name = ?,
+              photo_url = COALESCE(?, photo_url), updated_at = ?
           WHERE id = ?
         `,
         )
@@ -511,30 +550,172 @@ export class KeepyService {
   }
 
   deleteBill(userId: number, billId: number): { bookId: number } {
-    const bill = this.getBill(billId);
-    if (!bill || bill.userId !== userId) {
-      throw new BillNotFoundError();
-    }
-
-    const book = this.getBook(userId, bill.bookId);
-    if (!book) {
-      throw new BookNotFoundError();
-    }
-
     const now = new Date().toISOString();
     const remove = this.db.transaction(() => {
-      this.db.prepare("DELETE FROM bills WHERE user_id = ? AND id = ?").run(userId, billId);
-      if (book.currentBalance !== null) {
-        this.db
-          .prepare(
-            "UPDATE books SET current_balance = current_balance + ?, updated_at = ? WHERE id = ?",
-          )
-          .run(bill.amount, now, book.id);
-      }
+      return this.deleteBillRecord(userId, billId, now);
     });
 
-    remove();
+    const bill = remove();
     return { bookId: bill.bookId };
+  }
+
+  getBotEntry(userId: number, chatId: string, messageId: number): BotEntry | null {
+    const row = this.db
+      .prepare<[number, string, number], BotEntryRow>(
+        `
+        SELECT *
+        FROM bot_entries
+        WHERE user_id = ? AND chat_id = ? AND message_id = ?
+      `,
+      )
+      .get(userId, chatId, messageId);
+    return row ? mapBotEntry(row) : null;
+  }
+
+  upsertBotEntry(input: {
+    chatId: string;
+    lastError?: string | null;
+    messageId: number;
+    rawText: string;
+    status: BotEntryStatus;
+    userId: number;
+  }): BotEntry {
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        `
+        INSERT INTO bot_entries (
+          user_id, chat_id, message_id, raw_text, status, last_error, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(user_id, chat_id, message_id) DO UPDATE SET
+          raw_text = excluded.raw_text,
+          status = excluded.status,
+          last_error = excluded.last_error,
+          updated_at = excluded.updated_at
+      `,
+      )
+      .run(
+        input.userId,
+        input.chatId,
+        input.messageId,
+        input.rawText,
+        input.status,
+        input.lastError ?? null,
+        now,
+        now,
+      );
+
+    const entry = this.getBotEntry(input.userId, input.chatId, input.messageId);
+    if (!entry) {
+      throw new Error("Failed to load bot entry.");
+    }
+
+    return entry;
+  }
+
+  markBotEntryInvalid(entryId: number, rawText: string, error: string): BotEntry {
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        `
+        UPDATE bot_entries
+        SET raw_text = ?, status = 'invalid', last_error = ?, updated_at = ?
+        WHERE id = ?
+      `,
+      )
+      .run(rawText, error, now, entryId);
+
+    const entry = this.getBotEntryById(entryId);
+    if (!entry) {
+      throw new Error("Failed to load bot entry.");
+    }
+
+    return entry;
+  }
+
+  countBotEntryBills(entryId: number): number {
+    const row = this.db
+      .prepare<
+        [number],
+        { count: number }
+      >("SELECT COUNT(*) AS count FROM bot_entry_bills WHERE entry_id = ?")
+      .get(entryId);
+    return row?.count ?? 0;
+  }
+
+  replaceBotEntryBills(
+    entryId: number,
+    rawText: string,
+    billsInput: BotBillInput[],
+    occurredAt = new Date(),
+  ): { bills: Array<{ bill: Bill; book: Book }>; entry: BotEntry } {
+    const now = new Date().toISOString();
+    const replace = this.db.transaction(() => {
+      const entry = this.getBotEntryById(entryId);
+      if (!entry) {
+        throw new Error("Bot entry not found.");
+      }
+
+      const oldLinks = this.db
+        .prepare<
+          [number],
+          BotEntryBillRow
+        >("SELECT bill_id FROM bot_entry_bills WHERE entry_id = ? ORDER BY id")
+        .all(entryId);
+
+      for (const link of oldLinks) {
+        this.deleteBillRecord(entry.userId, link.bill_id, now);
+      }
+
+      const billTime = entry.firstBillAt ?? occurredAt;
+      const nextBills: Array<{ bill: Bill; book: Book }> = [];
+
+      for (const input of billsInput) {
+        const book = this.getBook(entry.userId, input.bookId);
+        if (!book) {
+          throw new BookNotFoundError();
+        }
+
+        const billId = this.insertBill(entry, book, input.amount, input.purpose, billTime, now);
+        this.db
+          .prepare(
+            `
+            INSERT INTO bot_entry_bills (entry_id, bill_id, created_at)
+            VALUES (?, ?, ?)
+          `,
+          )
+          .run(entryId, billId, now);
+
+        const bill = this.getBill(billId);
+        const updatedBook = this.getBook(entry.userId, book.id);
+        if (!bill || !updatedBook) {
+          throw new Error("Failed to load bot entry bill.");
+        }
+
+        nextBills.push({ bill, book: updatedBook });
+      }
+
+      this.db
+        .prepare(
+          `
+          UPDATE bot_entries
+          SET raw_text = ?, status = 'valid', first_bill_at = COALESCE(first_bill_at, ?),
+              last_error = NULL, updated_at = ?
+          WHERE id = ?
+        `,
+        )
+        .run(rawText, billTime.toISOString(), now, entryId);
+
+      const updatedEntry = this.getBotEntryById(entryId);
+      if (!updatedEntry) {
+        throw new Error("Failed to load updated bot entry.");
+      }
+
+      return { bills: nextBills, entry: updatedEntry };
+    });
+
+    return replace();
   }
 
   getBill(billId: number): Bill | null {
@@ -577,6 +758,14 @@ export class KeepyService {
 
   getCurrentMonthSummary(user: User, bookId: number, date = new Date()): MonthSummary {
     return this.getMonthSummary(user.id, bookId, getMonthRange(date, user.timezone));
+  }
+
+  getCurrentMonthSpendingCategories(
+    user: User,
+    bookId: number,
+    date = new Date(),
+  ): SpendingCategory[] {
+    return this.getSpendingCategories(user.id, bookId, getMonthRange(date, user.timezone));
   }
 
   listBillsForRange(userId: number, bookId: number, range: MonthRange): Bill[] {
@@ -722,7 +911,7 @@ export class KeepyService {
   }
 
   private createBill(
-    user: User,
+    user: Pick<User, "id">,
     book: Book,
     amount: number,
     purpose: string,
@@ -744,7 +933,7 @@ export class KeepyService {
   }
 
   private insertBill(
-    user: User,
+    user: Pick<User, "id">,
     book: Book,
     amount: number,
     purpose: string,
@@ -769,6 +958,36 @@ export class KeepyService {
     }
 
     return Number(result.lastInsertRowid);
+  }
+
+  private getBotEntryById(entryId: number): BotEntry | null {
+    const row = this.db
+      .prepare<[number], BotEntryRow>("SELECT * FROM bot_entries WHERE id = ?")
+      .get(entryId);
+    return row ? mapBotEntry(row) : null;
+  }
+
+  private deleteBillRecord(userId: number, billId: number, now: string): Bill {
+    const bill = this.getBill(billId);
+    if (!bill || bill.userId !== userId) {
+      throw new BillNotFoundError();
+    }
+
+    const book = this.getBook(userId, bill.bookId);
+    if (!book) {
+      throw new BookNotFoundError();
+    }
+
+    this.db.prepare("DELETE FROM bills WHERE user_id = ? AND id = ?").run(userId, billId);
+    if (book.currentBalance !== null) {
+      this.db
+        .prepare(
+          "UPDATE books SET current_balance = current_balance + ?, updated_at = ? WHERE id = ?",
+        )
+        .run(bill.amount, now, book.id);
+    }
+
+    return bill;
   }
 }
 
@@ -832,6 +1051,21 @@ function mapBill(row: BillRow): Bill {
     id: row.id,
     occurredAt: new Date(row.occurred_at),
     purpose: row.purpose,
+    userId: row.user_id,
+  };
+}
+
+function mapBotEntry(row: BotEntryRow): BotEntry {
+  return {
+    chatId: row.chat_id,
+    createdAt: new Date(row.created_at),
+    firstBillAt: row.first_bill_at ? new Date(row.first_bill_at) : null,
+    id: row.id,
+    lastError: row.last_error,
+    messageId: row.message_id,
+    rawText: row.raw_text,
+    status: row.status,
+    updatedAt: new Date(row.updated_at),
     userId: row.user_id,
   };
 }

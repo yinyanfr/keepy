@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from "express";
 
 import type { AppConfig } from "../configs/env.js";
-import { createSessionValue, sessionCookieName } from "../lib/session.js";
+import { createSessionValue, readSessionValue, sessionCookieName } from "../lib/session.js";
 import { verifyLoginWidgetAuth, verifyWebAppInitData } from "../lib/telegramAuth.js";
 import type { KeepyService } from "../services/keepyService.js";
 
@@ -42,7 +42,90 @@ export function createAuthRouter(service: KeepyService, config: AppConfig): Rout
     res.redirect("/");
   });
 
+  router.get("/auth/avatar", async (req: Request, res: Response) => {
+    const telegramId = readSessionValue(req.cookies?.[sessionCookieName], config.sessionSecret);
+    if (telegramId === null) {
+      res.status(401).end();
+      return;
+    }
+
+    const user = service.getUserByTelegramId(telegramId);
+    if (!user) {
+      res.status(404).end();
+      return;
+    }
+
+    const photo = await fetchTelegramAvatar(config.botToken, user.telegramId);
+    if (!photo) {
+      res.status(404).end();
+      return;
+    }
+
+    res.setHeader("Cache-Control", "private, max-age=3600");
+    res.setHeader("Content-Type", photo.contentType);
+    res.send(Buffer.from(photo.bytes));
+  });
+
   return router;
+}
+
+interface TelegramApiResponse<T> {
+  ok: boolean;
+  result?: T;
+}
+
+interface TelegramFile {
+  file_path?: string;
+}
+
+interface TelegramPhotoSize {
+  file_id: string;
+}
+
+interface TelegramUserProfilePhotos {
+  photos: TelegramPhotoSize[][];
+  total_count: number;
+}
+
+async function fetchTelegramAvatar(
+  botToken: string,
+  telegramId: number,
+): Promise<{ bytes: ArrayBuffer; contentType: string } | null> {
+  try {
+    const photosResponse = await fetch(
+      `https://api.telegram.org/bot${botToken}/getUserProfilePhotos?user_id=${telegramId}&limit=1`,
+    );
+    const photos = (await photosResponse.json()) as TelegramApiResponse<TelegramUserProfilePhotos>;
+    const sizes = photos.ok ? photos.result?.photos[0] : null;
+    const largest = sizes?.at(-1);
+    if (!largest) {
+      return null;
+    }
+
+    const fileResponse = await fetch(
+      `https://api.telegram.org/bot${botToken}/getFile?file_id=${encodeURIComponent(
+        largest.file_id,
+      )}`,
+    );
+    const file = (await fileResponse.json()) as TelegramApiResponse<TelegramFile>;
+    if (!file.ok || !file.result?.file_path) {
+      return null;
+    }
+
+    const imageResponse = await fetch(
+      `https://api.telegram.org/file/bot${botToken}/${file.result.file_path}`,
+    );
+    if (!imageResponse.ok) {
+      return null;
+    }
+
+    return {
+      bytes: await imageResponse.arrayBuffer(),
+      contentType: imageResponse.headers.get("content-type") ?? "image/jpeg",
+    };
+  } catch {
+    return null;
+  }
 }
 
 function setSessionCookie(res: Response, telegramId: number, config: AppConfig): void {

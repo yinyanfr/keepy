@@ -12,6 +12,11 @@ import type {
   User,
 } from "../../services/keepyService.js";
 
+interface BookListItem {
+  book: Book;
+  summary: MonthSummary;
+}
+
 export function renderLogin(config: AppConfig): string {
   return loginPage(config.botUsername);
 }
@@ -35,15 +40,18 @@ export function renderHome(input: {
     user,
     body: `
       <section class="section-title title-row">
-        <h1>${escapeHtml(book.name)} <span>${escapeHtml(currencyLabel(book))}</span></h1>
-        <a class="icon-button" href="${settingsUrl}" aria-label="编辑账本">${editIcon()}</a>
+        <h1>${escapeHtml(book.name)}</h1>
+        <span class="title-actions">
+          <a class="icon-button" href="${historyUrl}" aria-label="历史记录">${chartIcon()}</a>
+          <a class="icon-button" href="/books" aria-label="切换账本">${switchIcon()}</a>
+          <a class="icon-button" href="${settingsUrl}" aria-label="编辑账本">${editIcon()}</a>
+        </span>
       </section>
       ${summaryPanel(book, summary, settingsUrl)}
       <section class="section-title details-title">
         <h2>明细</h2>
         <span class="title-actions">
           <button class="icon-button" type="button" data-delete-toggle aria-label="编辑明细" aria-pressed="false">${editIcon()}</button>
-          <a class="icon-button" href="${historyUrl}" aria-label="历史图表">${chartIcon()}</a>
         </span>
       </section>
       ${billList(bills.items, user.timezone, bookUrl)}
@@ -121,9 +129,9 @@ export function renderSettings(input: { book: Book; bookCount: number; user: Use
   });
 }
 
-export function renderBooks(input: { books: Book[]; user: User }): string {
+export function renderBooks(input: { books: BookListItem[]; user: User }): string {
   const { books, user } = input;
-  const defaultBook = books.find((book) => book.isDefault) ?? books[0];
+  const defaultBook = books.find(({ book }) => book.isDefault)?.book ?? books[0]?.book;
 
   return appShell({
     active: "books",
@@ -139,7 +147,7 @@ export function renderBooks(input: { books: Book[]; user: User }): string {
           <select name="bookId">
             ${books
               .map(
-                (book) =>
+                ({ book }) =>
                   `<option value="${book.id}" ${book.id === defaultBook?.id ? "selected" : ""}>${escapeHtml(
                     book.name,
                   )}</option>`,
@@ -156,11 +164,25 @@ export function renderBooks(input: { books: Book[]; user: User }): string {
       <div class="bill-list">
         ${books
           .map(
-            (book) => `
+            ({ book, summary }) => `
               <a class="book-row" href="/books/${book.id}">
-                <div>
+                <div class="book-row-main">
                   <strong>${escapeHtml(book.name)}</strong>
                   <div class="bill-meta">${escapeHtml(currencyLabel(book))}</div>
+                  <div class="book-row-metrics">
+                    <span>
+                      <small>累计消费</small>
+                      <strong>${escapeHtml(formatAmount(summary.expenseTotal, book.currency))}</strong>
+                    </span>
+                    ${
+                      summary.budgetRemaining === null
+                        ? ""
+                        : `<span>
+                            <small>本月余额</small>
+                            <strong>${escapeHtml(formatAmount(summary.budgetRemaining, book.currency))}</strong>
+                          </span>`
+                    }
+                  </div>
                 </div>
                 ${book.isDefault ? '<span class="badge">默认</span>' : ""}
               </a>
@@ -211,9 +233,8 @@ export function renderHistory(input: {
       ${monthPicker(book.id, monthKey)}
       <section class="section-title">
         <h2>${escapeHtml(book.name)} · ${escapeHtml(summary.monthKey)}</h2>
-        <span class="muted">${escapeHtml(currencyLabel(book))}</span>
       </section>
-      ${pieChart(categories, book.currency)}
+      ${chartCarousel(categories, summary.bills, user.timezone, book.currency)}
       ${
         summary.bills.length === 0
           ? '<div class="empty">无数据</div>'
@@ -346,10 +367,19 @@ function billList(bills: Bill[], timezone: string, returnTo: string): string {
 
   return `<div class="day-groups">
     ${[...groups.entries()]
-      .map(
-        ([label, groupBills]) => `
+      .map(([label, groupBills]) => {
+        const dayExpense = groupBills.reduce(
+          (total, bill) => total + (bill.amount > 0 ? bill.amount : 0),
+          0,
+        );
+        const currency = groupBills[0]?.currency ?? null;
+
+        return `
           <section class="day-group">
-            <h3>${escapeHtml(label)}</h3>
+            <h3 class="day-group-header">
+              <span>${escapeHtml(label)}</span>
+              <span class="day-total">${escapeHtml(formatAmount(dayExpense, currency))}</span>
+            </h3>
             <div class="bill-list compact">
               ${groupBills
                 .map(
@@ -371,8 +401,8 @@ function billList(bills: Bill[], timezone: string, returnTo: string): string {
                 .join("")}
             </div>
           </section>
-        `,
-      )
+        `;
+      })
       .join("")}
   </div>`;
 }
@@ -447,11 +477,33 @@ function fabDrawer(book: Book, purposes: string[], idempotencyKey: string): stri
   `;
 }
 
-function pieChart(categories: SpendingCategory[], currency: string | null): string {
+function chartCarousel(
+  categories: SpendingCategory[],
+  bills: Bill[],
+  timezone: string,
+  currency: string | null,
+): string {
   if (categories.length === 0) {
     return '<div class="chart-panel empty">无数据</div>';
   }
 
+  return `
+    <section class="chart-panel chart-carousel" data-chart-carousel>
+      <button class="icon-button chart-nav prev" type="button" data-chart-prev aria-label="上一张图">‹</button>
+      <div class="chart-slides">
+        <div class="chart-slide active" data-chart-slide>
+          ${pieChartContent(categories, currency)}
+        </div>
+        <div class="chart-slide" data-chart-slide aria-hidden="true">
+          ${dailyBarChart(bills, timezone, currency)}
+        </div>
+      </div>
+      <button class="icon-button chart-nav next" type="button" data-chart-next aria-label="下一张图">›</button>
+    </section>
+  `;
+}
+
+function pieChartContent(categories: SpendingCategory[], currency: string | null): string {
   const colors = ["#68c59c", "#ff8f8f", "#e5b567", "#7aa7ff", "#c99cff", "#72d6d0"];
   let cursor = 0;
   const slices = categories
@@ -468,33 +520,79 @@ function pieChart(categories: SpendingCategory[], currency: string | null): stri
     .join("");
 
   return `
-    <section class="chart-panel">
-      <div class="pie-layout">
-        <svg class="pie-chart" viewBox="0 0 140 140" role="img" aria-label="支出分类图">
-          ${slices}
-        </svg>
-        <div>
-          <p class="pie-focus" data-pie-focus>点击分类查看占比</p>
-          <div class="pie-legend">
-            ${categories
-              .map(
-                (category, index) => `
-                  <button type="button" data-pie-legend="${index}" data-label="${escapeAttribute(
-                    category.purpose,
-                  )}" data-value="${escapeAttribute(formatAmount(category.amount, currency))}"
-                    data-percent="${category.percentage.toFixed(1)}%">
-                    <span style="background:${colors[index % colors.length]}"></span>
-                    ${escapeHtml(category.purpose)}
-                    <strong>${escapeHtml(formatAmount(category.amount, currency))}</strong>
-                  </button>
-                `,
-              )
-              .join("")}
-          </div>
+    <div class="pie-layout">
+      <svg class="pie-chart" viewBox="0 0 140 140" role="img" aria-label="支出分类图">
+        ${slices}
+      </svg>
+      <div>
+        <p class="pie-focus" data-pie-focus>点击分类查看占比</p>
+        <div class="pie-legend">
+          ${categories
+            .map(
+              (category, index) => `
+                <button type="button" data-pie-legend="${index}" data-label="${escapeAttribute(
+                  category.purpose,
+                )}" data-value="${escapeAttribute(formatAmount(category.amount, currency))}"
+                  data-percent="${category.percentage.toFixed(1)}%">
+                  <span style="background:${colors[index % colors.length]}"></span>
+                  ${escapeHtml(category.purpose)}
+                  <strong>${escapeHtml(formatAmount(category.amount, currency))}</strong>
+                </button>
+              `,
+            )
+            .join("")}
         </div>
       </div>
-    </section>
+    </div>
   `;
+}
+
+function dailyBarChart(bills: Bill[], timezone: string, currency: string | null): string {
+  const rows = dailyExpenseRows(bills, timezone);
+  const maxAmount = Math.max(...rows.map((row) => row.amount), 0);
+
+  if (maxAmount <= 0) {
+    return '<div class="empty chart-empty">无数据</div>';
+  }
+
+  return `
+    <div class="bar-chart" role="img" aria-label="每日总消费柱状图">
+      <h3>每日总消费</h3>
+      <div class="bar-rows">
+        ${rows
+          .map((row) => {
+            const width = Math.max((row.amount / maxAmount) * 100, 3);
+            return `
+              <div class="bar-row">
+                <span class="bar-day">${escapeHtml(row.label)}</span>
+                <span class="bar-track">
+                  <span class="bar-fill" style="width: ${width.toFixed(2)}%"></span>
+                </span>
+                <strong>${escapeHtml(formatAmount(row.amount, currency))}</strong>
+              </div>
+            `;
+          })
+          .join("")}
+      </div>
+    </div>
+  `;
+}
+
+function dailyExpenseRows(
+  bills: Bill[],
+  timezone: string,
+): Array<{ amount: number; label: string }> {
+  const groups = new Map<string, number>();
+  for (const bill of bills) {
+    if (bill.amount <= 0) {
+      continue;
+    }
+
+    const label = formatMonthDay(bill.occurredAt, timezone);
+    groups.set(label, (groups.get(label) ?? 0) + bill.amount);
+  }
+
+  return [...groups.entries()].map(([label, amount]) => ({ amount, label }));
 }
 
 function pieSlicePath(cx: number, cy: number, radius: number, start: number, end: number): string {
@@ -527,6 +625,10 @@ function editIcon(): string {
 
 function chartIcon(): string {
   return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5"></path><path d="M4 19h16"></path><path d="M8 16v-5"></path><path d="M13 16V8"></path><path d="M18 16v-3"></path></svg>`;
+}
+
+function switchIcon(): string {
+  return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h13"></path><path d="m17 4 3 3-3 3"></path><path d="M17 17H4"></path><path d="m7 14-3 3 3 3"></path></svg>`;
 }
 
 function plusIcon(): string {
