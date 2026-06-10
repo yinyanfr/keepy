@@ -675,13 +675,13 @@ export function style(): string {
     }
 
     .compact-bill {
-      grid-template-columns: minmax(0, 1fr) auto auto;
+      grid-template-columns: minmax(0, 1fr) auto 7.5ch;
       align-items: center;
       padding: 10px 12px;
     }
 
     .app[data-delete-mode="true"] .compact-bill {
-      grid-template-columns: minmax(0, 1fr) auto auto auto;
+      grid-template-columns: minmax(0, 1fr) auto 7.5ch auto;
     }
 
     .compact-bill .bill-purpose {
@@ -693,6 +693,14 @@ export function style(): string {
     .bill-time {
       color: var(--muted);
       font-size: 13px;
+      white-space: nowrap;
+    }
+
+    .amount {
+      justify-self: end;
+      width: 7.5ch;
+      font-variant-numeric: tabular-nums;
+      text-align: right;
       white-space: nowrap;
     }
 
@@ -1174,12 +1182,12 @@ export function style(): string {
       .profile-text { max-width: 104px; }
       .section-title h1, .section-title h2 { font-size: 20px; }
       .compact-bill {
-        grid-template-columns: minmax(0, 1fr) auto auto;
+        grid-template-columns: minmax(0, 1fr) auto 7.5ch;
         gap: 8px;
         padding: 9px 10px;
       }
       .app[data-delete-mode="true"] .compact-bill {
-        grid-template-columns: minmax(0, 1fr) auto auto auto;
+        grid-template-columns: minmax(0, 1fr) auto 7.5ch auto;
       }
       .amount {
         font-size: 15px;
