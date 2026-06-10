@@ -1,8 +1,10 @@
 import cookieParser from "cookie-parser";
 import express from "express";
+import { join } from "node:path";
 
 import { createKeepyBot } from "./features/bot/bot.js";
 import { loadConfig, requireBotToken, type AppConfig } from "./configs/env.js";
+import { createApiRouter } from "./routes/api.js";
 import { createAuthRouter } from "./routes/auth.js";
 import { createMiniAppRouter } from "./routes/miniApp.js";
 import { createTelegramRouter } from "./routes/telegram.js";
@@ -26,7 +28,9 @@ export function createRuntime(config = loadConfig()): KeepyRuntime {
   app.use(express.json());
   app.use(express.urlencoded({ extended: false }));
   app.use(cookieParser());
+  app.use(express.static(join(process.cwd(), "public")));
   app.use(createAuthRouter(service, config));
+  app.use(createApiRouter(service, config));
   app.use(createTelegramRouter(bot, config));
   app.use(createMiniAppRouter(service, config));
 

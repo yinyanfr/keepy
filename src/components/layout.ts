@@ -117,15 +117,22 @@ function themeBootScript(): string {
 function themeToggleScript(): string {
   return `<script>
     (() => {
-      const input = document.querySelector("[data-theme-switch]");
-      if (!input) return;
       const apply = (theme) => {
         document.documentElement.dataset.theme = theme;
         localStorage.setItem("keepy-theme", theme);
-        input.checked = theme === "dark";
+        document.querySelectorAll("[data-theme-switch]").forEach((input) => {
+          if (input instanceof HTMLInputElement) input.checked = theme === "dark";
+        });
       };
-      input.checked = document.documentElement.dataset.theme === "dark";
-      input.addEventListener("change", () => apply(input.checked ? "dark" : "light"));
+      window.KeepyHydrateTheme = () => {
+        const input = document.querySelector("[data-theme-switch]");
+        if (!(input instanceof HTMLInputElement)) return;
+        input.checked = document.documentElement.dataset.theme === "dark";
+        if (input.dataset.keepyThemeBound === "true") return;
+        input.dataset.keepyThemeBound = "true";
+        input.addEventListener("change", () => apply(input.checked ? "dark" : "light"));
+      };
+      window.KeepyHydrateTheme();
     })();
   </script>`;
 }
@@ -182,26 +189,51 @@ function miniAppInteractionScript(): string {
         }
       });
 
-      const avatar = document.querySelector("[data-avatar-img]");
-      if (avatar instanceof HTMLImageElement) {
-        avatar.addEventListener("load", () => {
-          const refreshAvatar = document.querySelector("[data-refresh-avatar]");
-          refreshAvatar?.removeAttribute("aria-busy");
-        });
-        avatar.addEventListener("error", () => {
-          const fallback = document.querySelector("[data-avatar-fallback]");
-          avatar.hidden = true;
-          if (fallback instanceof HTMLElement) fallback.hidden = false;
-          const refreshAvatar = document.querySelector("[data-refresh-avatar]");
-          refreshAvatar?.removeAttribute("aria-busy");
-        });
-      }
+      window.KeepyHydrateMini = () => {
+        const avatar = document.querySelector("[data-avatar-img]");
+        if (avatar instanceof HTMLImageElement && avatar.dataset.keepyAvatarBound !== "true") {
+          avatar.dataset.keepyAvatarBound = "true";
+          avatar.addEventListener("load", () => {
+            const refreshAvatar = document.querySelector("[data-refresh-avatar]");
+            refreshAvatar?.removeAttribute("aria-busy");
+          });
+          avatar.addEventListener("error", () => {
+            const fallback = document.querySelector("[data-avatar-fallback]");
+            avatar.hidden = true;
+            if (fallback instanceof HTMLElement) fallback.hidden = false;
+            const refreshAvatar = document.querySelector("[data-refresh-avatar]");
+            refreshAvatar?.removeAttribute("aria-busy");
+          });
+        }
 
-      for (const dialog of document.querySelectorAll("dialog")) {
-        dialog.addEventListener("click", (event) => {
-          if (event.target === dialog) dialog.close();
+        for (const dialog of document.querySelectorAll("dialog")) {
+          if (dialog.dataset.keepyDialogBound === "true") continue;
+          dialog.dataset.keepyDialogBound = "true";
+          dialog.addEventListener("click", (event) => {
+            if (event.target === dialog) dialog.close();
+          });
+        }
+
+        const focus = document.querySelector("[data-pie-focus]");
+        const showSlice = (element) => {
+          if (!element || !focus) return;
+          document.querySelectorAll("[data-pie-slice], [data-pie-legend]").forEach((item) => {
+            item.classList.remove("active");
+          });
+          element.classList.add("active");
+          const label = element.dataset.label;
+          const value = element.dataset.value;
+          const percent = element.dataset.percent;
+          focus.textContent = label + " · " + value + " · " + percent;
+        };
+
+        document.querySelectorAll("[data-pie-slice], [data-pie-legend]").forEach((element) => {
+          if (element.dataset.keepyPieBound === "true") return;
+          element.dataset.keepyPieBound = "true";
+          element.addEventListener("click", () => showSlice(element));
+          element.addEventListener("focus", () => showSlice(element));
         });
-      }
+      };
 
       document.addEventListener("submit", (event) => {
         const form = event.target;
@@ -225,23 +257,7 @@ function miniAppInteractionScript(): string {
         });
       });
 
-      const focus = document.querySelector("[data-pie-focus]");
-      const showSlice = (element) => {
-        if (!element || !focus) return;
-        document.querySelectorAll("[data-pie-slice], [data-pie-legend]").forEach((item) => {
-          item.classList.remove("active");
-        });
-        element.classList.add("active");
-        const label = element.dataset.label;
-        const value = element.dataset.value;
-        const percent = element.dataset.percent;
-        focus.textContent = label + " · " + value + " · " + percent;
-      };
-
-      document.querySelectorAll("[data-pie-slice], [data-pie-legend]").forEach((element) => {
-        element.addEventListener("click", () => showSlice(element));
-        element.addEventListener("focus", () => showSlice(element));
-      });
+      window.KeepyHydrateMini();
     })();
   </script>`;
 }
@@ -299,6 +315,16 @@ export function style(): string {
     button:disabled {
       cursor: wait;
       opacity: 0.62;
+    }
+
+    html[data-offline="true"] form:not([data-bill-form]) {
+      opacity: 0.62;
+    }
+
+    html[data-offline="true"] form:not([data-bill-form]) button,
+    html[data-offline="true"] form:not([data-bill-form]) input,
+    html[data-offline="true"] form:not([data-bill-form]) select {
+      cursor: not-allowed;
     }
 
     .app {
@@ -767,6 +793,14 @@ export function style(): string {
 
     .amount.expense { color: var(--ink); }
     .amount.income { color: var(--green); }
+
+    .pending-groups {
+      margin-bottom: 12px;
+    }
+
+    .pending-bill {
+      background: var(--subtle);
+    }
 
     .bill-delete-form {
       display: none;

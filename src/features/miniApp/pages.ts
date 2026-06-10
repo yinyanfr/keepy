@@ -453,7 +453,7 @@ function fabDrawer(book: Book, purposes: string[], idempotencyKey: string): stri
   return `
     <button class="fab" type="button" data-dialog-open="bill-drawer" aria-label="新增记账">${plusIcon()}</button>
     <dialog class="drawer" id="bill-drawer">
-      <form class="drawer-panel" method="post" action="/books/${book.id}/bills" data-once-form>
+      <form class="drawer-panel" method="post" action="/books/${book.id}/bills" data-bill-form data-book-id="${book.id}" data-currency="${escapeAttribute(book.currency ?? "")}" data-once-form>
         <input type="hidden" name="idempotencyKey" value="${escapeAttribute(idempotencyKey)}" />
         <div class="drawer-handle"></div>
         <section class="section-title">
