@@ -77,5 +77,30 @@ export function migrate(db: SqliteDatabase): void {
       FOREIGN KEY (bill_id) REFERENCES bills(id) ON DELETE CASCADE,
       UNIQUE(user_id, idempotency_key)
     );
+
+    CREATE TABLE IF NOT EXISTS bot_entries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      chat_id TEXT NOT NULL,
+      message_id INTEGER NOT NULL,
+      raw_text TEXT NOT NULL,
+      status TEXT NOT NULL,
+      first_bill_at TEXT,
+      last_error TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      UNIQUE(user_id, chat_id, message_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS bot_entry_bills (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      entry_id INTEGER NOT NULL,
+      bill_id INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (entry_id) REFERENCES bot_entries(id) ON DELETE CASCADE,
+      FOREIGN KEY (bill_id) REFERENCES bills(id) ON DELETE CASCADE,
+      UNIQUE(entry_id, bill_id)
+    );
   `);
 }

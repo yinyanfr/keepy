@@ -304,3 +304,176 @@ test("deletes a single bill and restores current balance", () => {
 
   service.close();
 });
+
+test("replaces a bot entry from one bill to multiple books", () => {
+  const service = KeepyService.fromPath(":memory:");
+  const { user, defaultBook } = service.ensureUser({
+    firstName: "Yan",
+    lastName: null,
+    photoUrl: null,
+    telegramId: 1013,
+    username: "yan",
+  });
+  const travel = service.createBook(user.id, "旅行");
+  const entry = service.upsertBotEntry({
+    chatId: "42",
+    messageId: 100,
+    rawText: "12 午饭",
+    status: "valid",
+    userId: user.id,
+  });
+
+  service.replaceBotEntryBills(
+    entry.id,
+    "12 午饭",
+    [{ amount: 12, bookId: defaultBook.id, purpose: "午饭" }],
+    new Date("2026-06-10T04:00:00.000Z"),
+  );
+  service.replaceBotEntryBills(
+    entry.id,
+    "12 午饭 默认 旅行",
+    [
+      { amount: 12, bookId: defaultBook.id, purpose: "午饭" },
+      { amount: 12, bookId: travel.id, purpose: "午饭" },
+    ],
+    new Date("2026-06-10T05:00:00.000Z"),
+  );
+
+  assert.equal(
+    service.getCurrentMonthSummary(user, defaultBook.id, new Date("2026-06-10T06:00:00.000Z"))
+      .billCount,
+    1,
+  );
+  assert.equal(
+    service.getCurrentMonthSummary(user, travel.id, new Date("2026-06-10T06:00:00.000Z")).billCount,
+    1,
+  );
+  assert.equal(service.countBotEntryBills(entry.id), 2);
+
+  service.close();
+});
+
+test("replaces a bot entry from multiple books to one bill", () => {
+  const service = KeepyService.fromPath(":memory:");
+  const { user, defaultBook } = service.ensureUser({
+    firstName: "Yan",
+    lastName: null,
+    photoUrl: null,
+    telegramId: 1014,
+    username: "yan",
+  });
+  const travel = service.createBook(user.id, "旅行");
+  const entry = service.upsertBotEntry({
+    chatId: "42",
+    messageId: 101,
+    rawText: "20 晚饭 默认 旅行",
+    status: "valid",
+    userId: user.id,
+  });
+
+  service.replaceBotEntryBills(
+    entry.id,
+    "20 晚饭 默认 旅行",
+    [
+      { amount: 20, bookId: defaultBook.id, purpose: "晚饭" },
+      { amount: 20, bookId: travel.id, purpose: "晚饭" },
+    ],
+    new Date("2026-06-10T04:00:00.000Z"),
+  );
+  service.replaceBotEntryBills(
+    entry.id,
+    "20 晚饭",
+    [{ amount: 20, bookId: defaultBook.id, purpose: "晚饭" }],
+    new Date("2026-06-10T05:00:00.000Z"),
+  );
+
+  assert.equal(
+    service.getCurrentMonthSummary(user, defaultBook.id, new Date("2026-06-10T06:00:00.000Z"))
+      .expenseTotal,
+    20,
+  );
+  assert.equal(
+    service.getCurrentMonthSummary(user, travel.id, new Date("2026-06-10T06:00:00.000Z")).billCount,
+    0,
+  );
+  assert.equal(service.countBotEntryBills(entry.id), 1);
+
+  service.close();
+});
+
+test("keeps existing bot bills when an entry is marked invalid", () => {
+  const service = KeepyService.fromPath(":memory:");
+  const { user, defaultBook } = service.ensureUser({
+    firstName: "Yan",
+    lastName: null,
+    photoUrl: null,
+    telegramId: 1015,
+    username: "yan",
+  });
+  const entry = service.upsertBotEntry({
+    chatId: "42",
+    messageId: 102,
+    rawText: "8 咖啡",
+    status: "valid",
+    userId: user.id,
+  });
+
+  service.replaceBotEntryBills(
+    entry.id,
+    "8 咖啡",
+    [{ amount: 8, bookId: defaultBook.id, purpose: "咖啡" }],
+    new Date("2026-06-10T04:00:00.000Z"),
+  );
+  const invalidEntry = service.markBotEntryInvalid(
+    entry.id,
+    "咖啡 8",
+    "记账格式应为：数字 [用途] [账本]",
+  );
+
+  assert.equal(invalidEntry.status, "invalid");
+  assert.equal(service.countBotEntryBills(entry.id), 1);
+  assert.equal(
+    service.getCurrentMonthSummary(user, defaultBook.id, new Date("2026-06-10T06:00:00.000Z"))
+      .expenseTotal,
+    8,
+  );
+
+  service.close();
+});
+
+test("records an invalid bot entry and later replaces it with a bill", () => {
+  const service = KeepyService.fromPath(":memory:");
+  const { user, defaultBook } = service.ensureUser({
+    firstName: "Yan",
+    lastName: null,
+    photoUrl: null,
+    telegramId: 1016,
+    username: "yan",
+  });
+  const entry = service.upsertBotEntry({
+    chatId: "42",
+    lastError: "记账格式应为：数字 [用途] [账本]",
+    messageId: 103,
+    rawText: "午饭 12",
+    status: "invalid",
+    userId: user.id,
+  });
+
+  assert.equal(service.countBotEntryBills(entry.id), 0);
+  service.replaceBotEntryBills(
+    entry.id,
+    "12 午饭",
+    [{ amount: 12, bookId: defaultBook.id, purpose: "午饭" }],
+    entry.createdAt,
+  );
+
+  const updatedEntry = service.getBotEntry(user.id, "42", 103);
+  assert.equal(updatedEntry?.status, "valid");
+  assert.equal(service.countBotEntryBills(entry.id), 1);
+  assert.equal(
+    service.getCurrentMonthSummary(user, defaultBook.id, entry.createdAt).expenseTotal,
+    12,
+  );
+
+  service.close();
+});

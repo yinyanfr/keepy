@@ -1163,6 +1163,7 @@ export function style(): string {
       .summary-strip:not([open]) > .summary-grid { display: none; }
       .summary-strip[open] .summary-mobile-trigger { background: var(--subtle); }
       .summary-item { display: grid; gap: 4px; }
+      .summary-grid .summary-item:nth-child(-n+2) { display: none; }
       .summary-item strong { text-align: left; }
       .month-picker { grid-template-columns: 1fr; }
       .month-dialog {

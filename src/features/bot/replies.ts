@@ -1,6 +1,12 @@
-import { formatDateTime } from "../../lib/dates.js";
 import { formatAmount } from "../../lib/money.js";
-import type { Bill, Book, MonthSummary, User } from "../../services/keepyService.js";
+import { formatDateTime } from "../../lib/dates.js";
+import type {
+  Bill,
+  Book,
+  MonthSummary,
+  SpendingCategory,
+  User,
+} from "../../services/keepyService.js";
 
 export function helpText(miniAppUrl: string): string {
   const miniAppLine = miniAppUrl ? `\nMini App：${miniAppUrl}` : "";
@@ -19,7 +25,7 @@ export function helpText(miniAppUrl: string): string {
 
 命令：
 /book 选择默认账本
-/bills 查看默认账本本月账单
+/bills 查看默认账本本月类型汇总
 /help 查看帮助${miniAppLine}`;
 }
 
@@ -55,11 +61,14 @@ export function billCreatedText(input: {
   )}${budgetText}`;
 }
 
-export function billsText(input: { book: Book; summary: MonthSummary; timezone: string }): string {
-  const { book, summary, timezone } = input;
+export function billsText(input: {
+  book: Book;
+  categories: SpendingCategory[];
+  summary: MonthSummary;
+}): string {
+  const { book, categories, summary } = input;
   const lines = [
     `${book.name} ${summary.monthKey}`,
-    `本月余额：${formatAmount(summary.netBalance, book.currency)}`,
     `累计消费：${formatAmount(summary.expenseTotal, book.currency)}`,
   ];
 
@@ -67,23 +76,14 @@ export function billsText(input: { book: Book; summary: MonthSummary; timezone: 
     lines.push(`预算余额：${formatAmount(summary.budgetRemaining, book.currency)}`);
   }
 
-  if (summary.bills.length === 0) {
-    lines.push("", "暂无明细。");
+  if (categories.length === 0) {
+    lines.push("", "暂无本月消费。");
     return lines.join("\n");
   }
 
-  lines.push("", "明细：");
-  for (const bill of summary.bills.slice(0, 20)) {
-    lines.push(
-      `${formatDateTime(bill.occurredAt, timezone)} ${bill.purpose} ${formatAmount(
-        bill.amount,
-        bill.currency,
-      )}`,
-    );
-  }
-
-  if (summary.bills.length > 20) {
-    lines.push(`还有 ${summary.bills.length - 20} 条，请在 Mini App 查看。`);
+  lines.push("", "类型消费：");
+  for (const category of categories) {
+    lines.push(`${category.purpose}：${formatAmount(category.amount, book.currency)}`);
   }
 
   return lines.join("\n");

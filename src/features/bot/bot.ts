@@ -1,9 +1,18 @@
 import { Bot, InlineKeyboard, type Context } from "grammy";
 
 import type { AppConfig } from "../../configs/env.js";
-import { isLedgerParseSuccess, parseLedgerMessage } from "../../lib/money.js";
+import {
+  isLedgerParseSuccess,
+  parseLedgerMessage,
+  type LedgerParseSuccess,
+} from "../../lib/money.js";
 import type { TelegramAuthUser } from "../../lib/telegramAuth.js";
-import { BookNotFoundError } from "../../services/keepyService.js";
+import {
+  BookNotFoundError,
+  type BotBillInput,
+  type Book,
+  type User,
+} from "../../services/keepyService.js";
 import type { KeepyService } from "../../services/keepyService.js";
 import { billCreatedText, billsText, helpText, welcomeText } from "./replies.js";
 
@@ -54,11 +63,12 @@ export function createKeepyBot(service: KeepyService, config: AppConfig): Bot {
 
     const { user, defaultBook } = service.ensureUser(profile);
     const summary = service.getCurrentMonthSummary(user, defaultBook.id);
+    const categories = service.getCurrentMonthSpendingCategories(user, defaultBook.id);
     await ctx.reply(
       billsText({
         book: defaultBook,
+        categories,
         summary,
-        timezone: user.timezone,
       }),
     );
   });
@@ -91,65 +101,38 @@ export function createKeepyBot(service: KeepyService, config: AppConfig): Bot {
   });
 
   bot.on("message:text", async (ctx) => {
-    const text = ctx.message.text;
-    if (text.startsWith("/")) {
+    await handleLedgerText(
+      ctx,
+      {
+        chatId: String(ctx.message.chat.id),
+        messageId: ctx.message.message_id,
+        occurredAt: telegramDate(ctx.message.date),
+        text: ctx.message.text,
+      },
+      service,
+      config,
+      false,
+    );
+  });
+
+  bot.on("edited_message:text", async (ctx) => {
+    const message = ctx.update.edited_message;
+    if (!message?.text) {
       return;
     }
 
-    const profile = profileFromContext(ctx);
-    if (!profile) {
-      await ctx.reply("无法识别 Telegram 用户。");
-      return;
-    }
-
-    const existingUser = service.getUserByTelegramId(profile.telegramId);
-    const existingBookNames = existingUser
-      ? service.listBooks(existingUser.id).map((book) => book.name)
-      : [];
-    const firstPass = parseLedgerMessage(text, existingBookNames);
-    if (!isLedgerParseSuccess(firstPass)) {
-      await ctx.reply(`${firstPass.error}\n\n${helpText(config.publicUrl)}`);
-      return;
-    }
-
-    const { user } = service.ensureUser(profile);
-    const bookNames = service.listBooks(user.id).map((book) => book.name);
-    const parsed = parseLedgerMessage(text, bookNames);
-
-    if (!isLedgerParseSuccess(parsed)) {
-      await ctx.reply(`${parsed.error}\n\n${helpText(config.publicUrl)}`);
-      return;
-    }
-
-    if (parsed.bookNames && parsed.bookNames.length > 1) {
-      const occurredAt = new Date();
-      const replies: string[] = [];
-
-      for (const bookName of parsed.bookNames) {
-        const targetBook = service.findBookByName(user.id, bookName);
-        if (!targetBook) {
-          await ctx.reply(`账本不存在：${bookName}`);
-          return;
-        }
-
-        const { bill, book } = service.recordBillForBook(
-          user,
-          targetBook.id,
-          parsed.amount,
-          parsed.purpose,
-          occurredAt,
-        );
-        const summary = service.getCurrentMonthSummary(user, book.id, bill.occurredAt);
-        replies.push(billCreatedText({ bill, book, summary, user }));
-      }
-
-      await ctx.reply(replies.join("\n\n"));
-      return;
-    }
-
-    const { bill, book } = service.recordBill(user, parsed);
-    const summary = service.getCurrentMonthSummary(user, book.id, bill.occurredAt);
-    await ctx.reply(billCreatedText({ bill, book, summary, user }));
+    await handleLedgerText(
+      ctx,
+      {
+        chatId: String(message.chat.id),
+        messageId: message.message_id,
+        occurredAt: telegramDate(message.date),
+        text: message.text,
+      },
+      service,
+      config,
+      true,
+    );
   });
 
   bot.catch((error) => {
@@ -157,6 +140,114 @@ export function createKeepyBot(service: KeepyService, config: AppConfig): Bot {
   });
 
   return bot;
+}
+
+interface LedgerTextEvent {
+  chatId: string;
+  messageId: number;
+  occurredAt: Date;
+  text: string;
+}
+
+async function handleLedgerText(
+  ctx: Context,
+  event: LedgerTextEvent,
+  service: KeepyService,
+  config: AppConfig,
+  edited: boolean,
+): Promise<void> {
+  const text = event.text.trim();
+  if (!text || text.startsWith("/")) {
+    return;
+  }
+
+  const profile = profileFromContext(ctx);
+  if (!profile) {
+    await ctx.reply("无法识别 Telegram 用户。");
+    return;
+  }
+
+  const { user } = service.ensureUser(profile);
+  const previousEntry = service.getBotEntry(user.id, event.chatId, event.messageId);
+  const bookNames = service.listBooks(user.id).map((book) => book.name);
+  const parsed = parseLedgerMessage(text, bookNames);
+
+  if (!isLedgerParseSuccess(parsed)) {
+    const entry = service.upsertBotEntry({
+      chatId: event.chatId,
+      lastError: parsed.error,
+      messageId: event.messageId,
+      rawText: text,
+      status: "invalid",
+      userId: user.id,
+    });
+    const hadBills = service.countBotEntryBills(entry.id) > 0;
+
+    if (edited && hadBills) {
+      await ctx.reply(
+        `修改后的格式无效：${parsed.error}\n已保留此前记录。如需删除，请在 Mini App 中删除记录。`,
+        miniAppReplyOptions(),
+      );
+      return;
+    }
+
+    await ctx.reply(
+      `${parsed.error}\n可以直接编辑这条消息为正确格式。\n\n${helpText(config.publicUrl)}`,
+      miniAppReplyOptions(),
+    );
+    return;
+  }
+
+  const billInputs = botBillInputs(service, user, parsed);
+  const entry = service.upsertBotEntry({
+    chatId: event.chatId,
+    messageId: event.messageId,
+    rawText: text,
+    status: "valid",
+    userId: user.id,
+  });
+  const billTime = previousEntry?.firstBillAt ?? previousEntry?.createdAt ?? event.occurredAt;
+  const result = service.replaceBotEntryBills(entry.id, text, billInputs, billTime);
+  const replies = result.bills.map(({ bill, book }) => {
+    const summary = service.getCurrentMonthSummary(user, book.id, bill.occurredAt);
+    return billCreatedText({ bill, book, summary, user });
+  });
+
+  await ctx.reply(`${edited ? "已更新这条记账：\n" : ""}${replies.join("\n\n")}`);
+}
+
+function botBillInputs(
+  service: KeepyService,
+  user: User,
+  parsed: LedgerParseSuccess,
+): BotBillInput[] {
+  if (parsed.bookNames && parsed.bookNames.length > 0) {
+    return parsed.bookNames.map((bookName) => {
+      const book = service.findBookByName(user.id, bookName);
+      if (!book) {
+        throw new BookNotFoundError(`Book not found: ${bookName}`);
+      }
+
+      return billInputForBook(book, parsed);
+    });
+  }
+
+  const book = parsed.bookName
+    ? (service.findBookByName(user.id, parsed.bookName) ?? service.ensureDefaultBook(user.id))
+    : service.ensureDefaultBook(user.id);
+  return [billInputForBook(book, parsed)];
+}
+
+function billInputForBook(book: Book, parsed: LedgerParseSuccess): BotBillInput {
+  return {
+    amount: parsed.amount,
+    bookId: book.id,
+    purpose: parsed.purpose,
+  };
+}
+
+function telegramDate(timestamp: number | undefined): Date {
+  return timestamp ? new Date(timestamp * 1000) : new Date();
 }
 
 function miniAppReplyOptions(): { reply_markup: InlineKeyboard } {
