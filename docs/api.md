@@ -2,7 +2,7 @@
 
 This document describes the HTTP surface exposed by Keepy today.
 
-The app is mostly server-rendered HTML. It does not currently expose a general JSON API for bookkeeping data.
+The app is mostly server-rendered HTML, but it also exposes a small authenticated JSON API under `/api`.
 
 ## Conventions
 
@@ -93,9 +93,8 @@ Unauthenticated:
 
 Authenticated:
 
-- Status: `200 OK`
-- Returns the home page for the current user's default book
-- Includes current month summary and recent bill list
+- Status: `302 Found`
+- Redirects to `/books/:defaultBookId`
 
 ### GET `/settings`
 
@@ -123,10 +122,12 @@ Form fields:
 - `currentBalance`: number or empty
 - `monthlyBudget`: number or empty
 
+Empty numeric fields clear the stored value.
+
 Success:
 
 - Status: `302 Found`
-- Redirect: `/settings`
+- Redirect: `/books/:bookId`
 
 Validation failure:
 
@@ -231,6 +232,7 @@ Failure modes:
 
 - Status: `404 Not Found` when the path secret is wrong
 - Status: `403 Forbidden` when the Telegram secret header is wrong
+- Status: `403 Forbidden` when the Telegram secret header is missing
 
 Success:
 
@@ -251,8 +253,21 @@ Properties:
 - `secure` when `NODE_ENV=production`
 - 30-day TTL
 
+## JSON API
+
+Authenticated JSON endpoints:
+
+- `GET /api/me`
+- `GET /api/books/:bookId/month`
+- `POST /api/books/:bookId/bills`
+- `POST /api/sync/bills`
+
+Bill creation rules:
+
+- `amount` must be a finite non-zero number
+- `purpose` must be a non-empty string
+
 ## Notes
 
-- Keepy has no dedicated JSON endpoints for books, bills, or summaries yet
 - Most user-facing state changes are driven by HTML forms and Telegram updates
 - In local development without `PUBLIC_URL`, Telegram updates arrive through polling rather than the webhook route

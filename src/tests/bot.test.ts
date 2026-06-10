@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { handleLedgerText } from "../features/bot/bot.js";
+import { handleLedgerText, miniAppUrlFromConfig } from "../features/bot/bot.js";
 import type { KeepyService } from "../services/keepyService.js";
 
 test("does not record edited messages without an existing bot entry", async () => {
@@ -65,6 +65,7 @@ test("does not record edited messages without an existing bot entry", async () =
       botUsername: "keepy_bot",
       databasePath: ":memory:",
       isProduction: false,
+      miniAppUrl: "https://t.me/keepy_bot/keepy",
       port: 3000,
       publicUrl: "",
       sessionSecret: "session-secret",
@@ -76,4 +77,12 @@ test("does not record edited messages without an existing bot entry", async () =
   assert.equal(wroteEntry, false);
   assert.equal(replacedBills, false);
   assert.deepEqual(replies, ["这条旧消息没有可同步的记账记录。请重新发送一条新的记账消息。"]);
+});
+
+test("uses configured mini app url", () => {
+  assert.equal(
+    miniAppUrlFromConfig({ miniAppUrl: "https://t.me/custom_bot/keepy" }),
+    "https://t.me/custom_bot/keepy",
+  );
+  assert.equal(miniAppUrlFromConfig({ miniAppUrl: "" }), null);
 });

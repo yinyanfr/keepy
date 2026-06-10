@@ -7,6 +7,7 @@ import { getMonthRange, monthRangeFromKey } from "../lib/dates.js";
 import { readSessionValue, sessionCookieName } from "../lib/session.js";
 import {
   BookNotFoundError,
+  InvalidBillAmountError,
   type Bill,
   type Book,
   type KeepyService,
@@ -76,7 +77,7 @@ export function createApiRouter(service: KeepyService, config: AppConfig): Route
     const bookId = numberParam(req.params.bookId);
     const amount = numberBody(req, "amount");
     const purpose = textBody(req, "purpose");
-    if (bookId === null || amount === null || !purpose) {
+    if (bookId === null || amount === null || !isValidBillAmount(amount) || !purpose) {
       res.status(400).json({ error: "记账内容无效。" });
       return;
     }
@@ -94,6 +95,11 @@ export function createApiRouter(service: KeepyService, config: AppConfig): Route
     } catch (error) {
       if (error instanceof BookNotFoundError) {
         res.status(404).json({ error: "账本不存在。" });
+        return;
+      }
+
+      if (error instanceof InvalidBillAmountError) {
+        res.status(400).json({ error: "记账内容无效。" });
         return;
       }
 
@@ -134,7 +140,7 @@ function syncBill(user: User, service: KeepyService, item: unknown): Record<stri
 
   if (
     !Number.isInteger(bookId) ||
-    !Number.isFinite(amount) ||
+    !isValidBillAmount(amount) ||
     !purpose ||
     !isValidDate(occurredAt)
   ) {
@@ -159,6 +165,10 @@ function syncBill(user: User, service: KeepyService, item: unknown): Record<stri
   } catch (error) {
     if (error instanceof BookNotFoundError) {
       return { clientId, error: "账本不存在。", ok: false };
+    }
+
+    if (error instanceof InvalidBillAmountError) {
+      return { clientId, error: "记账内容无效。", ok: false };
     }
 
     throw error;
@@ -307,4 +317,8 @@ function numberParam(value: unknown): number | null {
 
 function isValidDate(value: Date): boolean {
   return Number.isFinite(value.getTime());
+}
+
+function isValidBillAmount(value: number): boolean {
+  return Number.isFinite(value) && value !== 0;
 }

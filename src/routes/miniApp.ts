@@ -17,6 +17,7 @@ import {
   BookConflictError,
   BookDeleteError,
   BookNotFoundError,
+  InvalidBillAmountError,
   type KeepyService,
   type User,
 } from "../services/keepyService.js";
@@ -55,8 +56,8 @@ export function createMiniAppRouter(service: KeepyService, config: AppConfig): R
     try {
       const updatedBook = service.updateBook(user.id, book.id, {
         currency: textBody(req, "currency"),
-        currentBalance: book.currentBalance,
-        initialBalance: book.initialBalance,
+        currentBalance: numberBody(req, "currentBalance"),
+        initialBalance: numberBody(req, "initialBalance"),
         monthlyBudget: numberBody(req, "monthlyBudget"),
         name: textBody(req, "name") ?? book.name,
       });
@@ -169,8 +170,8 @@ export function createMiniAppRouter(service: KeepyService, config: AppConfig): R
     try {
       const updatedBook = service.updateBook(user.id, book.id, {
         currency: textBody(req, "currency"),
-        currentBalance: book.currentBalance,
-        initialBalance: book.initialBalance,
+        currentBalance: numberBody(req, "currentBalance"),
+        initialBalance: numberBody(req, "initialBalance"),
         monthlyBudget: numberBody(req, "monthlyBudget"),
         name: textBody(req, "name") ?? book.name,
       });
@@ -224,7 +225,7 @@ export function createMiniAppRouter(service: KeepyService, config: AppConfig): R
     const bookId = numberParam(req.params.bookId);
     const amount = numberBody(req, "amount");
     const purpose = textBody(req, "purpose");
-    if (bookId === null || amount === null || !purpose) {
+    if (bookId === null || amount === null || !isValidBillAmount(amount) || !purpose) {
       res.status(400).send("记账内容无效。");
       return;
     }
@@ -241,6 +242,11 @@ export function createMiniAppRouter(service: KeepyService, config: AppConfig): R
     } catch (error) {
       if (error instanceof BookNotFoundError) {
         res.status(404).send("账本不存在。");
+        return;
+      }
+
+      if (error instanceof InvalidBillAmountError) {
+        res.status(400).send("记账内容无效。");
         return;
       }
 
@@ -422,4 +428,8 @@ function returnTo(req: Request): string | null {
   }
 
   return value;
+}
+
+function isValidBillAmount(value: number): boolean {
+  return Number.isFinite(value) && value !== 0;
 }

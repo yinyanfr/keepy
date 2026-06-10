@@ -8,6 +8,7 @@ import {
   BookConflictError,
   BookDeleteError,
   BookNotFoundError,
+  InvalidBillAmountError,
   KeepyService,
 } from "../services/keepyService.js";
 
@@ -91,6 +92,25 @@ test("records bills and calculates monthly budget remaining", () => {
   assert.equal(summary.incomeTotal, 20);
   assert.equal(summary.netBalance, 8);
   assert.equal(summary.budgetRemaining, 88);
+
+  service.close();
+});
+
+test("rejects zero-amount ledger messages and direct bill inserts", () => {
+  const service = KeepyService.fromPath(":memory:");
+  const { user, defaultBook } = service.ensureUser({
+    firstName: "Yan",
+    lastName: null,
+    photoUrl: null,
+    telegramId: 10021,
+    username: "yan",
+  });
+
+  assert.deepEqual(parseLedgerMessage("0 午饭", ["默认"]), { error: "金额不能为 0。" });
+  assert.throws(
+    () => service.recordBillForBook(user, defaultBook.id, 0, "午饭"),
+    InvalidBillAmountError,
+  );
 
   service.close();
 });

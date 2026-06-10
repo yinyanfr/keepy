@@ -13,6 +13,7 @@ const config: AppConfig = {
   botUsername: "keepy_bot",
   databasePath: ":memory:",
   isProduction: false,
+  miniAppUrl: "https://t.me/keepy_bot/keepy",
   port: 3000,
   publicUrl: "",
   sessionSecret: "session-secret",
@@ -104,6 +105,47 @@ test("api sync bills returns per-item results", async () => {
       ["local-2", false],
     ],
   );
+  service.close();
+});
+
+test("api bill creation rejects zero amounts", async () => {
+  const service = KeepyService.fromPath(":memory:");
+  const { user, defaultBook } = seedUser(service);
+  const app = buildApiApp(service, user.telegramId);
+
+  const response = await postJson(app, `/api/books/${defaultBook.id}/bills`, {
+    amount: 0,
+    idempotencyKey: "zero-amount",
+    purpose: "测试",
+  });
+
+  assert.equal(response.status, 400);
+  assert.equal(service.getCurrentMonthSummary(user, defaultBook.id).billCount, 0);
+  service.close();
+});
+
+test("api sync bills rejects zero amounts per item", async () => {
+  const service = KeepyService.fromPath(":memory:");
+  const { user, defaultBook } = seedUser(service);
+  const app = buildApiApp(service, user.telegramId);
+
+  const response = await postJson(app, "/api/sync/bills", {
+    bills: [
+      {
+        amount: 0,
+        bookId: defaultBook.id,
+        clientId: "local-zero",
+        idempotencyKey: "local-zero",
+        occurredAt: "2026-06-10T04:00:00.000Z",
+        purpose: "测试",
+      },
+    ],
+  });
+  const data = JSON.parse(response.text) as { results: Array<{ clientId: string; ok: boolean }> };
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(data.results, [{ clientId: "local-zero", error: "记账内容无效。", ok: false }]);
+  assert.equal(service.getCurrentMonthSummary(user, defaultBook.id).billCount, 0);
   service.close();
 });
 

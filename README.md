@@ -68,16 +68,17 @@ In production you should set:
 
 ## Environment Variables
 
-| Variable         | Required    | Notes                                              |
-| ---------------- | ----------- | -------------------------------------------------- |
-| `BOT_TOKEN`      | Yes         | Preferred Telegram bot token variable              |
-| `BOTTOKEN`       | Yes         | Legacy alias supported by the app                  |
-| `BOT_USERNAME`   | Recommended | Needed for Telegram login widget in browser        |
-| `DATABASE_PATH`  | No          | Defaults to `data/keepy.sqlite`                    |
-| `PORT`           | No          | Defaults to `3000`                                 |
-| `PUBLIC_URL`     | No          | Enables webhook mode when set                      |
-| `SESSION_SECRET` | Production  | Required in production; signed login cookie secret |
-| `WEBHOOK_SECRET` | Production  | Required in production; webhook path/header secret |
+| Variable         | Required    | Notes                                                |
+| ---------------- | ----------- | ---------------------------------------------------- |
+| `BOT_TOKEN`      | Yes         | Preferred Telegram bot token variable                |
+| `BOTTOKEN`       | Yes         | Legacy alias supported by the app                    |
+| `BOT_USERNAME`   | Recommended | Needed for Telegram login widget in browser          |
+| `MINI_APP_URL`   | No          | Mini App URL; defaults to `https://t.me/<bot>/keepy` |
+| `DATABASE_PATH`  | No          | Defaults to `data/keepy.sqlite`                      |
+| `PORT`           | No          | Defaults to `3000`                                   |
+| `PUBLIC_URL`     | No          | Enables webhook mode when set                        |
+| `SESSION_SECRET` | Production  | Required in production; signed login cookie secret   |
+| `WEBHOOK_SECRET` | Production  | Required in production; webhook path/header secret   |
 
 ## Telegram Usage
 
@@ -106,11 +107,12 @@ Rules:
 
 - Positive amounts are treated as expenses
 - Negative amounts are treated as income
+- Zero is rejected
 - The last token is treated as a book name only if it exactly matches an existing book
 
 ## Web App Routes
 
-- `GET /` login page or current month summary
+- `GET /` login page or redirect to the default book page
 - `GET /settings` default book settings
 - `POST /settings` update default book settings
 - `GET /books` list books and create new books

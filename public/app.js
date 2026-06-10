@@ -573,6 +573,7 @@
     return new Intl.DateTimeFormat("zh-CN", {
       hour: "2-digit",
       minute: "2-digit",
+      timeZone: document.querySelector(".app")?.dataset.timeZone,
     }).format(new Date(value));
   }
 

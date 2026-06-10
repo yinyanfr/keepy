@@ -40,6 +40,7 @@ const config = {
   botUsername: "keepy_bot",
   databasePath: ":memory:",
   isProduction: false,
+  miniAppUrl: "https://t.me/keepy_bot/keepy",
   port: 3000,
   publicUrl: "",
   sessionSecret: "session-secret",
@@ -149,6 +150,71 @@ test("records positive and negative amounts from the mini app form with an idemp
     { amount: 12, key: "abc" },
     { amount: -8, key: "def" },
   ]);
+});
+
+test("rejects zero amounts from the mini app form", async () => {
+  let called = false;
+  const app = buildTestApp({
+    recordBillForBookOnce: () => {
+      called = true;
+      throw new Error("Should not record zero-amount bills.");
+    },
+  });
+
+  const response = await post(
+    app,
+    "/books/1/bills",
+    "amount=0&purpose=%E6%B5%8B%E8%AF%95",
+    "manual",
+  );
+
+  assert.equal(response.status, 400);
+  assert.equal(called, false);
+  assert.match(response.text, /记账内容无效/);
+});
+
+test("passes submitted balances when saving book settings", async () => {
+  let received: {
+    currency: string | null;
+    currentBalance: number | null;
+    initialBalance: number | null;
+    monthlyBudget: number | null;
+    name: string;
+  } | null = null;
+  const app = buildTestApp({
+    updateBook: (_userId, _bookId, input) => {
+      received = {
+        currency: input.currency,
+        currentBalance: input.currentBalance,
+        initialBalance: input.initialBalance,
+        monthlyBudget: input.monthlyBudget,
+        name: input.name,
+      };
+      return {
+        ...defaultBook,
+        currentBalance: input.currentBalance,
+        initialBalance: input.initialBalance,
+        monthlyBudget: input.monthlyBudget,
+        name: input.name,
+      };
+    },
+  });
+
+  const response = await post(
+    app,
+    "/books/1/settings",
+    "name=%E9%BB%98%E8%AE%A4&initialBalance=100&currentBalance=88&monthlyBudget=50",
+    "manual",
+  );
+
+  assert.equal(response.status, 302);
+  assert.deepEqual(received, {
+    currency: null,
+    currentBalance: 88,
+    initialBalance: 100,
+    monthlyBudget: 50,
+    name: "默认",
+  });
 });
 
 test("deletes a bill and redirects back to the current page", async () => {

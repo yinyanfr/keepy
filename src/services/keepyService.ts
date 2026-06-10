@@ -180,6 +180,13 @@ export class BillNotFoundError extends Error {
   }
 }
 
+export class InvalidBillAmountError extends Error {
+  constructor(message = "Bill amount must be non-zero.") {
+    super(message);
+    this.name = "InvalidBillAmountError";
+  }
+}
+
 export class KeepyService {
   constructor(private readonly db: SqliteDatabase) {}
 
@@ -940,6 +947,8 @@ export class KeepyService {
     occurredAt: Date,
     now: string,
   ): number {
+    assertValidBillAmount(amount);
+
     const result = this.db
       .prepare(
         `
@@ -988,6 +997,12 @@ export class KeepyService {
     }
 
     return bill;
+  }
+}
+
+function assertValidBillAmount(amount: number): void {
+  if (!Number.isFinite(amount) || amount === 0) {
+    throw new InvalidBillAmountError();
   }
 }
 

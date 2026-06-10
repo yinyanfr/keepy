@@ -16,8 +16,6 @@ import {
 import type { KeepyService } from "../../services/keepyService.js";
 import { billCreatedText, billsText, helpText, welcomeText } from "./replies.js";
 
-const telegramMiniAppUrl = "https://t.me/bkpybot/keepy";
-
 export function createKeepyBot(service: KeepyService, config: AppConfig): Bot {
   const bot = new Bot(config.botToken);
 
@@ -29,11 +27,11 @@ export function createKeepyBot(service: KeepyService, config: AppConfig): Bot {
     }
 
     const result = service.ensureUser(profile);
-    await ctx.reply(welcomeText(result.created, config.publicUrl), miniAppReplyOptions());
+    await ctx.reply(welcomeText(result.created, config.miniAppUrl), miniAppReplyOptions(config));
   });
 
   bot.command("help", async (ctx) => {
-    await ctx.reply(helpText(config.publicUrl), miniAppReplyOptions());
+    await ctx.reply(helpText(config.miniAppUrl), miniAppReplyOptions(config));
   });
 
   bot.command("book", async (ctx) => {
@@ -191,14 +189,14 @@ export async function handleLedgerText(
     if (edited && hadBills) {
       await ctx.reply(
         `修改后的格式无效：${parsed.error}\n已保留此前记录。如需删除，请在 Mini App 中删除记录。`,
-        miniAppReplyOptions(),
+        miniAppReplyOptions(config),
       );
       return;
     }
 
     await ctx.reply(
-      `${parsed.error}\n可以直接编辑这条消息为正确格式。\n\n${helpText(config.publicUrl)}`,
-      miniAppReplyOptions(),
+      `${parsed.error}\n可以直接编辑这条消息为正确格式。\n\n${helpText(config.miniAppUrl)}`,
+      miniAppReplyOptions(config),
     );
     return;
   }
@@ -255,9 +253,20 @@ function telegramDate(timestamp: number | undefined): Date {
   return timestamp ? new Date(timestamp * 1000) : new Date();
 }
 
-function miniAppReplyOptions(): { reply_markup: InlineKeyboard } {
+export function miniAppUrlFromConfig(config: Pick<AppConfig, "miniAppUrl">): string | null {
+  return config.miniAppUrl || null;
+}
+
+function miniAppReplyOptions(
+  config: Pick<AppConfig, "miniAppUrl">,
+): { reply_markup: InlineKeyboard } | undefined {
+  const miniAppUrl = miniAppUrlFromConfig(config);
+  if (!miniAppUrl) {
+    return undefined;
+  }
+
   return {
-    reply_markup: new InlineKeyboard().url("打开 Mini App", telegramMiniAppUrl),
+    reply_markup: new InlineKeyboard().url("打开 Mini App", miniAppUrl),
   };
 }
 
