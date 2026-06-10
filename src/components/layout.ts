@@ -757,6 +757,7 @@ export function style(): string {
       justify-content: space-between;
       gap: 16px;
       margin: 0 0 8px;
+      padding: 0 12px;
       color: var(--muted);
       font-size: 18px;
       font-weight: 800;
@@ -1297,57 +1298,50 @@ export function style(): string {
       color: var(--green-strong);
     }
 
-    .bar-chart {
-      display: grid;
-      gap: 18px;
+    .daily-chart {
       min-height: 228px;
+      display: grid;
       align-content: center;
     }
 
-    .bar-chart h3 {
-      margin: 0;
-      color: var(--green-strong);
-      font-size: 18px;
-    }
-
-    .bar-rows {
-      display: grid;
-      gap: 12px;
-    }
-
-    .bar-row {
-      display: grid;
-      grid-template-columns: 54px minmax(0, 1fr) 7.5ch;
-      gap: 10px;
-      align-items: center;
-    }
-
-    .bar-day {
-      color: var(--muted);
-      font-size: 13px;
-      font-weight: 800;
-      white-space: nowrap;
-    }
-
-    .bar-track {
-      height: 16px;
-      overflow: hidden;
-      border-radius: 999px;
-      background: var(--progress-track);
-    }
-
-    .bar-fill {
+    .daily-chart-svg {
+      width: 100%;
+      height: auto;
       display: block;
-      height: 100%;
-      border-radius: inherit;
-      background: var(--green);
+      overflow: visible;
     }
 
-    .bar-row strong {
-      color: var(--green-strong);
+    .daily-chart-title {
+      fill: var(--green-strong);
+      font-size: 18px;
+      font-weight: 800;
+    }
+
+    .daily-chart-grid {
+      stroke: var(--line);
+      stroke-width: 1;
+    }
+
+    .daily-chart-day {
+      fill: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .daily-chart-track {
+      fill: var(--progress-track);
+    }
+
+    .daily-chart-bar {
+      fill: var(--green);
+    }
+
+    .daily-chart-value {
+      fill: var(--green-strong);
+      font-size: 12px;
+      font-weight: 800;
       font-variant-numeric: tabular-nums;
-      text-align: right;
-      white-space: nowrap;
+      text-anchor: end;
     }
 
     .chart-empty {
@@ -1458,10 +1452,6 @@ export function style(): string {
       }
       .chart-nav.next {
         right: 4px;
-      }
-      .bar-row {
-        grid-template-columns: 44px minmax(0, 1fr) 7.5ch;
-        gap: 8px;
       }
       .pie-chart {
         justify-self: center;

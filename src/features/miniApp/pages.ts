@@ -575,25 +575,42 @@ function dailyBarChart(bills: Bill[], timezone: string, currency: string | null)
     return '<div class="empty chart-empty">无数据</div>';
   }
 
+  const width = 360;
+  const chartLeft = 60;
+  const chartWidth = 210;
+  const valueX = 346;
+  const top = 36;
+  const rowHeight = 20;
+  const height = top + rows.length * rowHeight + 10;
+  const grid = [0.25, 0.5, 0.75, 1]
+    .map((step) => {
+      const x = chartLeft + chartWidth * step;
+      return `<line class="daily-chart-grid" x1="${x.toFixed(1)}" y1="${top - 10}" x2="${x.toFixed(1)}" y2="${
+        height - 6
+      }"></line>`;
+    })
+    .join("");
+
   return `
-    <div class="bar-chart" role="img" aria-label="每日总消费柱状图">
-      <h3>每日总消费</h3>
-      <div class="bar-rows">
+    <div class="daily-chart" role="img" aria-label="每日总消费柱状图">
+      <svg class="daily-chart-svg" viewBox="0 0 ${width} ${height}" aria-hidden="true">
+        <text class="daily-chart-title" x="0" y="18">每日总消费</text>
+        ${grid}
         ${rows
-          .map((row) => {
-            const width = Math.max((row.amount / maxAmount) * 100, 3);
+          .map((row, index) => {
+            const y = top + index * rowHeight;
+            const barWidth = Math.max((row.amount / maxAmount) * chartWidth, 3);
             return `
-              <div class="bar-row">
-                <span class="bar-day">${escapeHtml(row.label)}</span>
-                <span class="bar-track">
-                  <span class="bar-fill" style="width: ${width.toFixed(2)}%"></span>
-                </span>
-                <strong>${escapeHtml(formatAmount(row.amount, currency))}</strong>
-              </div>
+              <g class="daily-chart-row">
+                <text class="daily-chart-day" x="0" y="${y + 11}">${escapeHtml(row.label)}</text>
+                <rect class="daily-chart-track" x="${chartLeft}" y="${y}" width="${chartWidth}" height="10" rx="5"></rect>
+                <rect class="daily-chart-bar" x="${chartLeft}" y="${y}" width="${barWidth.toFixed(1)}" height="10" rx="5"></rect>
+                <text class="daily-chart-value" x="${valueX}" y="${y + 11}">${escapeHtml(formatAmount(row.amount, currency))}</text>
+              </g>
             `;
           })
           .join("")}
-      </div>
+      </svg>
     </div>
   `;
 }
