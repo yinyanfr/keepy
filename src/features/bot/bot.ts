@@ -121,6 +121,32 @@ export function createKeepyBot(service: KeepyService, config: AppConfig): Bot {
       return;
     }
 
+    if (parsed.bookNames && parsed.bookNames.length > 1) {
+      const occurredAt = new Date();
+      const replies: string[] = [];
+
+      for (const bookName of parsed.bookNames) {
+        const targetBook = service.findBookByName(user.id, bookName);
+        if (!targetBook) {
+          await ctx.reply(`账本不存在：${bookName}`);
+          return;
+        }
+
+        const { bill, book } = service.recordBillForBook(
+          user,
+          targetBook.id,
+          parsed.amount,
+          parsed.purpose,
+          occurredAt,
+        );
+        const summary = service.getCurrentMonthSummary(user, book.id, bill.occurredAt);
+        replies.push(billCreatedText({ bill, book, summary, user }));
+      }
+
+      await ctx.reply(replies.join("\n\n"));
+      return;
+    }
+
     const { bill, book } = service.recordBill(user, parsed);
     const summary = service.getCurrentMonthSummary(user, book.id, bill.occurredAt);
     await ctx.reply(billCreatedText({ bill, book, summary, user }));

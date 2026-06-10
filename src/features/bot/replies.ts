@@ -7,10 +7,12 @@ export function helpText(miniAppUrl: string): string {
 
   return `Keepy 记账格式：
 数字 [用途] [账本]
+数字 用途 账本1 账本2 ...（4 个及以上字段时同时记入多个账本）
 
 示例：
 12 午饭
 59.9 咖啡 默认
+59.9 咖啡 默认 旅行
 -3000 工资
 
 正数记为支出，负数记为收入。

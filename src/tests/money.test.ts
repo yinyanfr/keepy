@@ -35,6 +35,37 @@ test("uses the last field as book only when it matches an existing book", () => 
   }
 });
 
+test("uses four or more fields as a multi-book entry", () => {
+  const result = parseLedgerMessage("59.9 咖啡 默认 旅行", ["默认", "旅行"]);
+
+  assert.equal(isLedgerParseSuccess(result), true);
+  if (isLedgerParseSuccess(result)) {
+    assert.equal(result.amount, 59.9);
+    assert.equal(result.purpose, "咖啡");
+    assert.deepEqual(result.bookNames, ["默认", "旅行"]);
+  }
+});
+
+test("keeps three or fewer fields on the legacy amount purpose book path", () => {
+  const result = parseLedgerMessage("59.9 咖啡 旅行", ["默认", "旅行"]);
+
+  assert.equal(isLedgerParseSuccess(result), true);
+  if (isLedgerParseSuccess(result)) {
+    assert.equal(result.purpose, "咖啡");
+    assert.equal(result.bookName, "旅行");
+    assert.equal(result.bookNames, undefined);
+  }
+});
+
+test("rejects missing books in multi-book entries", () => {
+  const result = parseLedgerMessage("59.9 咖啡 默认 不存在", ["默认"]);
+
+  assert.equal(isLedgerParseSuccess(result), false);
+  if (!isLedgerParseSuccess(result)) {
+    assert.match(result.error, /账本不存在：不存在/);
+  }
+});
+
 test("supports negative income and rejects invalid amount", () => {
   const income = parseLedgerMessage("-3000 工资", []);
   const invalid = parseLedgerMessage("午饭 12", []);
