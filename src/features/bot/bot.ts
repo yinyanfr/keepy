@@ -149,7 +149,7 @@ interface LedgerTextEvent {
   text: string;
 }
 
-async function handleLedgerText(
+export async function handleLedgerText(
   ctx: Context,
   event: LedgerTextEvent,
   service: KeepyService,
@@ -169,6 +169,11 @@ async function handleLedgerText(
 
   const { user } = service.ensureUser(profile);
   const previousEntry = service.getBotEntry(user.id, event.chatId, event.messageId);
+  if (edited && !previousEntry) {
+    await ctx.reply("这条旧消息没有可同步的记账记录。请重新发送一条新的记账消息。");
+    return;
+  }
+
   const bookNames = service.listBooks(user.id).map((book) => book.name);
   const parsed = parseLedgerMessage(text, bookNames);
 
