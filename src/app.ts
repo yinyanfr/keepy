@@ -34,6 +34,13 @@ export function createRuntime(config = loadConfig()): KeepyRuntime {
 }
 
 export async function start(runtime = createRuntime()): Promise<void> {
+  await new Promise<void>((resolve) => {
+    runtime.app.listen(runtime.config.port, () => {
+      console.log(`Keepy listening on http://localhost:${runtime.config.port}`);
+      resolve();
+    });
+  });
+
   await runtime.bot.init();
 
   if (runtime.config.publicUrl) {
@@ -48,8 +55,4 @@ export async function start(runtime = createRuntime()): Promise<void> {
       console.error("Telegram polling failed", error);
     });
   }
-
-  runtime.app.listen(runtime.config.port, () => {
-    console.log(`Keepy listening on http://localhost:${runtime.config.port}`);
-  });
 }

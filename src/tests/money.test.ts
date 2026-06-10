@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { isLedgerParseSuccess, parseLedgerMessage } from "../lib/money.js";
+import { formatAmount, isLedgerParseSuccess, parseLedgerMessage } from "../lib/money.js";
 
 test("parses amount without purpose into default purpose and default book", () => {
   const result = parseLedgerMessage("12", ["默认"]);
@@ -44,4 +44,11 @@ test("supports negative income and rejects invalid amount", () => {
     assert.equal(income.amount, -3000);
   }
   assert.equal(isLedgerParseSuccess(invalid), false);
+});
+
+test("formats common currencies as symbols", () => {
+  assert.equal(formatAmount(3.5, "CNY"), "¥3.50");
+  assert.equal(formatAmount(3.5, "USD"), "$3.50");
+  assert.equal(formatAmount(3.5, "EUR"), "€3.50");
+  assert.equal(formatAmount(3.5, "BTC"), "BTC3.50");
 });

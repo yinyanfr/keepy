@@ -12,6 +12,21 @@ export interface LedgerParseFailure {
 export type LedgerParseResult = LedgerParseSuccess | LedgerParseFailure;
 
 const amountPattern = /^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/;
+const currencySymbols = new Map([
+  ["CNY", "¥"],
+  ["RMB", "¥"],
+  ["USD", "$"],
+  ["EUR", "€"],
+  ["GBP", "£"],
+  ["JPY", "¥"],
+  ["KRW", "₩"],
+  ["HKD", "HK$"],
+  ["TWD", "NT$"],
+  ["SGD", "S$"],
+  ["CAD", "C$"],
+  ["AUD", "A$"],
+  ["CHF", "CHF"],
+]);
 
 export function isLedgerParseSuccess(result: LedgerParseResult): result is LedgerParseSuccess {
   return "amount" in result;
@@ -77,5 +92,14 @@ export function formatAmount(amount: number, currency: string | null): string {
     minimumFractionDigits: Number.isInteger(amount) ? 0 : 2,
   }).format(amount);
 
-  return currency ? `${formatted}${currency}` : formatted;
+  return `${currencySymbol(currency)}${formatted}`;
+}
+
+export function currencySymbol(currency: string | null): string {
+  const normalized = currency?.trim();
+  if (!normalized) {
+    return "";
+  }
+
+  return currencySymbols.get(normalized.toUpperCase()) ?? normalized;
 }

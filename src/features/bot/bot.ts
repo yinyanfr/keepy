@@ -7,6 +7,8 @@ import { BookNotFoundError } from "../../services/keepyService.js";
 import type { KeepyService } from "../../services/keepyService.js";
 import { billCreatedText, billsText, helpText, welcomeText } from "./replies.js";
 
+const telegramMiniAppUrl = "https://t.me/bkpybot/keepy";
+
 export function createKeepyBot(service: KeepyService, config: AppConfig): Bot {
   const bot = new Bot(config.botToken);
 
@@ -18,11 +20,11 @@ export function createKeepyBot(service: KeepyService, config: AppConfig): Bot {
     }
 
     const result = service.ensureUser(profile);
-    await ctx.reply(welcomeText(result.created, config.publicUrl), replyOptions(config.publicUrl));
+    await ctx.reply(welcomeText(result.created, config.publicUrl), miniAppReplyOptions());
   });
 
   bot.command("help", async (ctx) => {
-    await ctx.reply(helpText(config.publicUrl), replyOptions(config.publicUrl));
+    await ctx.reply(helpText(config.publicUrl), miniAppReplyOptions());
   });
 
   bot.command("book", async (ctx) => {
@@ -131,17 +133,10 @@ export function createKeepyBot(service: KeepyService, config: AppConfig): Bot {
   return bot;
 }
 
-function miniAppKeyboard(publicUrl: string): InlineKeyboard | undefined {
-  if (!publicUrl) {
-    return undefined;
-  }
-
-  return new InlineKeyboard().url("打开 Mini App", publicUrl);
-}
-
-function replyOptions(publicUrl: string): { reply_markup: InlineKeyboard } | undefined {
-  const keyboard = miniAppKeyboard(publicUrl);
-  return keyboard ? { reply_markup: keyboard } : undefined;
+function miniAppReplyOptions(): { reply_markup: InlineKeyboard } {
+  return {
+    reply_markup: new InlineKeyboard().url("打开 Mini App", telegramMiniAppUrl),
+  };
 }
 
 function profileFromContext(ctx: Context): TelegramAuthUser | null {

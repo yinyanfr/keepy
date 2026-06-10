@@ -16,7 +16,7 @@ export function createTelegramRouter(bot: Bot, config: AppConfig): Router {
       }
 
       const secretHeader = req.header("X-Telegram-Bot-Api-Secret-Token");
-      if (secretHeader !== config.webhookSecret) {
+      if (secretHeader && secretHeader !== config.webhookSecret) {
         res.sendStatus(403);
         return;
       }

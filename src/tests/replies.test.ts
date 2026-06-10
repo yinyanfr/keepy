@@ -46,6 +46,6 @@ test("formats bot bill confirmation with budget remaining", () => {
   });
 
   assert.match(text, /成功于2026-06-09 12:00/);
-  assert.match(text, /用于午饭的12CNY/);
-  assert.match(text, /预算余额88CNY/);
+  assert.match(text, /用于午饭的¥12/);
+  assert.match(text, /预算余额¥88/);
 });

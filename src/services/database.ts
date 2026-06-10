@@ -66,5 +66,16 @@ export function migrate(db: SqliteDatabase): void {
 
     CREATE INDEX IF NOT EXISTS idx_bills_user_book_time
       ON bills(user_id, book_id, occurred_at);
+
+    CREATE TABLE IF NOT EXISTS bill_submissions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      idempotency_key TEXT NOT NULL,
+      bill_id INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (bill_id) REFERENCES bills(id) ON DELETE CASCADE,
+      UNIQUE(user_id, idempotency_key)
+    );
   `);
 }

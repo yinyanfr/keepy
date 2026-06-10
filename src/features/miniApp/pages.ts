@@ -1,47 +1,66 @@
 import { appShell, loginPage } from "../../components/layout.js";
-import { formatDateTime } from "../../lib/dates.js";
+import { formatMonthDay, formatTime } from "../../lib/dates.js";
 import { escapeAttribute, escapeHtml } from "../../lib/html.js";
-import { formatAmount } from "../../lib/money.js";
+import { currencySymbol, formatAmount } from "../../lib/money.js";
 import type { AppConfig } from "../../configs/env.js";
-import type { Bill, Book, MonthSummary, User } from "../../services/keepyService.js";
+import type {
+  Bill,
+  Book,
+  MonthSummary,
+  PaginatedBills,
+  SpendingCategory,
+  User,
+} from "../../services/keepyService.js";
 
 export function renderLogin(config: AppConfig): string {
   return loginPage(config.botUsername);
 }
 
-export function renderHome(input: { book: Book; summary: MonthSummary; user: User }): string {
-  const { book, summary, user } = input;
+export function renderHome(input: {
+  billSubmissionKey: string;
+  bills: PaginatedBills;
+  book: Book;
+  purposes: string[];
+  summary: MonthSummary;
+  user: User;
+}): string {
+  const { billSubmissionKey, bills, book, purposes, summary, user } = input;
+  const bookUrl = `/books/${book.id}`;
+  const settingsUrl = `${bookUrl}/settings`;
+  const historyUrl = `/history?bookId=${book.id}&month=${encodeURIComponent(summary.monthKey)}`;
 
   return appShell({
     active: "home",
     title: "Keepy 本月明细",
     user,
     body: `
-      <section class="section-title">
-        <h1>${escapeHtml(book.name)} · ${escapeHtml(summary.monthKey)}</h1>
-        <span class="muted">${escapeHtml(book.currency || "无币种")}</span>
+      <section class="section-title title-row">
+        <h1>${escapeHtml(book.name)} <span>${escapeHtml(currencyLabel(book))}</span></h1>
+        <a class="icon-button" href="${settingsUrl}" aria-label="编辑账本">${editIcon()}</a>
       </section>
-      <section class="stats">
-        ${stat("本月余额", formatAmount(summary.netBalance, book.currency))}
-        ${stat("累计消费", formatAmount(summary.expenseTotal, book.currency))}
-        ${stat("收入", formatAmount(summary.incomeTotal, book.currency))}
-        ${stat(
-          "预算余额",
-          summary.budgetRemaining === null
-            ? "未设置"
-            : formatAmount(summary.budgetRemaining, book.currency),
-        )}
-      </section>
-      <section class="section-title">
+      ${summaryPanel(book, summary, settingsUrl)}
+      <section class="section-title details-title">
         <h2>明细</h2>
+        <span class="title-actions">
+          <button class="icon-button" type="button" data-delete-toggle aria-label="编辑明细" aria-pressed="false">${editIcon()}</button>
+          <a class="icon-button" href="${historyUrl}" aria-label="历史图表">${chartIcon()}</a>
+        </span>
       </section>
-      ${billList(summary.bills, user.timezone)}
+      ${billList(bills.items, user.timezone, bookUrl)}
+      ${pagination(bookUrl, bills)}
+      ${fabDrawer(book, purposes, billSubmissionKey)}
     `,
   });
 }
 
-export function renderSettings(input: { book: Book; user: User }): string {
-  const { book, user } = input;
+export function renderSettings(input: { book: Book; bookCount: number; user: User }): string {
+  const { book, bookCount, user } = input;
+  const deleteDisabled = book.isDefault || bookCount <= 1;
+  const deleteHint = book.isDefault
+    ? "默认账本不能删除。"
+    : bookCount <= 1
+      ? "至少需要保留一个账本。"
+      : "";
 
   return appShell({
     active: "settings",
@@ -52,7 +71,7 @@ export function renderSettings(input: { book: Book; user: User }): string {
         <h1>账本设置</h1>
         ${book.isDefault ? '<span class="badge">默认账本</span>' : ""}
       </section>
-      <form class="form-panel" method="post" action="/settings">
+      <form class="form-panel" method="post" action="/books/${book.id}/settings">
         <label>
           名字
           <input name="name" required value="${escapeAttribute(book.name)}" />
@@ -64,18 +83,6 @@ export function renderSettings(input: { book: Book; user: User }): string {
           )}" />
         </label>
         <label>
-          初始余额
-          <input name="initialBalance" inputmode="decimal" value="${escapeAttribute(
-            book.initialBalance ?? "",
-          )}" />
-        </label>
-        <label>
-          当前余额
-          <input name="currentBalance" inputmode="decimal" value="${escapeAttribute(
-            book.currentBalance ?? "",
-          )}" />
-        </label>
-        <label>
           月预算
           <input name="monthlyBudget" inputmode="decimal" value="${escapeAttribute(
             book.monthlyBudget ?? "",
@@ -83,9 +90,33 @@ export function renderSettings(input: { book: Book; user: User }): string {
         </label>
         <div class="button-row">
           <button class="button" type="submit">保存</button>
-          <a class="button secondary" href="/books">账本列表</a>
+          <a class="button secondary" href="/books/${book.id}">返回明细</a>
         </div>
       </form>
+
+      <section class="danger-zone">
+        <h2>删除账本</h2>
+        ${
+          deleteDisabled
+            ? `<p class="muted">${escapeHtml(deleteHint)}</p>`
+            : `<button class="button danger" type="button" data-dialog-open="delete-book-dialog">删除账本</button>`
+        }
+      </section>
+      ${
+        deleteDisabled
+          ? ""
+          : `<dialog class="confirm-dialog" id="delete-book-dialog">
+              <form method="dialog" class="dialog-card">
+                <h2>删除「${escapeHtml(book.name)}」？</h2>
+                <p>此账本里的明细会一起删除，操作无法撤销。</p>
+                <div class="button-row">
+                  <button class="button secondary" value="cancel">取消</button>
+                  <button class="button danger" form="delete-book-form" type="submit">确认删除</button>
+                </div>
+              </form>
+              <form id="delete-book-form" method="post" action="/books/${book.id}/delete"></form>
+            </dialog>`
+      }
     `,
   });
 }
@@ -126,13 +157,13 @@ export function renderBooks(input: { books: Book[]; user: User }): string {
         ${books
           .map(
             (book) => `
-              <div class="book-row">
+              <a class="book-row" href="/books/${book.id}">
                 <div>
                   <strong>${escapeHtml(book.name)}</strong>
-                  <div class="bill-meta">${escapeHtml(book.currency || "无币种")}</div>
+                  <div class="bill-meta">${escapeHtml(currencyLabel(book))}</div>
                 </div>
                 ${book.isDefault ? '<span class="badge">默认</span>' : ""}
-              </div>
+              </a>
             `,
           )
           .join("")}
@@ -161,10 +192,13 @@ export function renderBooks(input: { books: Book[]; user: User }): string {
 }
 
 export function renderHistory(input: {
-  groups: { bills: Bill[]; monthKey: string }[];
+  book: Book;
+  categories: SpendingCategory[];
+  monthKey: string;
+  summary: MonthSummary;
   user: User;
 }): string {
-  const { groups, user } = input;
+  const { book, categories, monthKey, summary, user } = input;
 
   return appShell({
     active: "history",
@@ -174,53 +208,331 @@ export function renderHistory(input: {
       <section class="section-title">
         <h1>历史记录</h1>
       </section>
+      ${monthPicker(book.id, monthKey)}
+      <section class="section-title">
+        <h2>${escapeHtml(book.name)} · ${escapeHtml(summary.monthKey)}</h2>
+        <span class="muted">${escapeHtml(currencyLabel(book))}</span>
+      </section>
+      ${pieChart(categories, book.currency)}
       ${
-        groups.length === 0
-          ? '<div class="empty">暂无历史记录</div>'
-          : groups
-              .map(
-                (group) => `
-                  <section class="section-title">
-                    <h2>${escapeHtml(group.monthKey)}</h2>
-                  </section>
-                  ${billList(group.bills, user.timezone)}
-                `,
-              )
-              .join("")
+        summary.bills.length === 0
+          ? '<div class="empty">无数据</div>'
+          : billList(
+              summary.bills,
+              user.timezone,
+              historyUrl(book.id, ...monthParts(summary.monthKey)),
+            )
       }
     `,
   });
 }
 
-function stat(label: string, value: string): string {
-  return `<div class="stat"><span class="muted">${escapeHtml(label)}</span><strong>${escapeHtml(
-    value,
-  )}</strong></div>`;
+function monthPicker(bookId: number, monthKey: string): string {
+  const { month, year } = parseMonthKey(monthKey);
+  const dialogId = `month-picker-${bookId}`;
+
+  return `
+    <section class="month-picker">
+      <span>
+        <span>月份</span>
+        <button class="month-picker-button" type="button" data-dialog-open="${dialogId}">
+          <strong>${year}年${month}月</strong>
+          <span>选择月份</span>
+        </button>
+      </span>
+      <a class="button secondary" href="/history?bookId=${bookId}&month=${escapeAttribute(monthKey)}">查看</a>
+    </section>
+    <dialog class="month-dialog" id="${dialogId}">
+      <div class="dialog-card month-dialog-card">
+        <div class="month-dialog-head">
+          <a class="icon-button" href="${historyUrl(bookId, year - 1, month)}" aria-label="上一年">‹</a>
+          <strong>${year}年</strong>
+          <a class="icon-button" href="${historyUrl(bookId, year + 1, month)}" aria-label="下一年">›</a>
+        </div>
+        <div class="month-grid" role="list">
+          ${Array.from({ length: 12 }, (_, index) => {
+            const itemMonth = index + 1;
+            const active = itemMonth === month;
+            return `<a class="${active ? "active" : ""}" href="${historyUrl(
+              bookId,
+              year,
+              itemMonth,
+            )}" role="listitem">${itemMonth}月</a>`;
+          }).join("")}
+        </div>
+        <button class="button secondary" type="button" data-dialog-close="${dialogId}">取消</button>
+      </div>
+    </dialog>
+  `;
 }
 
-function billList(bills: Bill[], timezone: string): string {
+function parseMonthKey(monthKey: string): { month: number; year: number } {
+  const match = /^(\d{4})-(\d{2})$/.exec(monthKey);
+  if (!match) {
+    const now = new Date();
+    return { month: now.getMonth() + 1, year: now.getFullYear() };
+  }
+
+  return {
+    month: Number(match[2]),
+    year: Number(match[1]),
+  };
+}
+
+function historyUrl(bookId: number, year: number, month: number): string {
+  const monthKey = `${year}-${String(month).padStart(2, "0")}`;
+  return `/history?bookId=${bookId}&month=${encodeURIComponent(monthKey)}`;
+}
+
+function monthParts(monthKey: string): [number, number] {
+  const { month, year } = parseMonthKey(monthKey);
+  return [year, month];
+}
+
+function summaryPanel(book: Book, summary: MonthSummary, settingsUrl: string): string {
+  const hasBudget = book.monthlyBudget !== null;
+  const budgetRemaining =
+    summary.budgetRemaining === null
+      ? `<a href="${settingsUrl}">点击设置</a>`
+      : escapeHtml(formatAmount(summary.budgetRemaining, book.currency));
+  const progress =
+    hasBudget && book.monthlyBudget && book.monthlyBudget > 0
+      ? Math.min(Math.max((summary.expenseTotal / book.monthlyBudget) * 100, 0), 100)
+      : null;
+
+  return `
+    <details class="summary-strip">
+      <summary class="summary-mobile-trigger">
+        <span class="summary-mobile-metrics">
+          ${mobileSummaryItem("累计消费", escapeHtml(formatAmount(summary.expenseTotal, book.currency)))}
+          ${mobileSummaryItem("本月余额", budgetRemaining)}
+        </span>
+        ${
+          progress === null
+            ? ""
+            : `<span class="budget-progress" aria-label="预算使用进度">
+                <span style="width: ${progress.toFixed(2)}%"></span>
+              </span>`
+        }
+      </summary>
+      <div class="summary-grid">
+        ${summaryItem("累计消费", escapeHtml(formatAmount(summary.expenseTotal, book.currency)))}
+        ${summaryItem("本月余额", budgetRemaining)}
+        ${summaryItem("收入", escapeHtml(formatAmount(summary.incomeTotal, book.currency)))}
+        ${summaryItem("净收支", escapeHtml(formatAmount(summary.netBalance, book.currency)))}
+      </div>
+    </details>
+  `;
+}
+
+function summaryItem(label: string, valueHtml: string): string {
+  return `<div class="summary-item"><span>${escapeHtml(label)}</span><strong>${valueHtml}</strong></div>`;
+}
+
+function mobileSummaryItem(label: string, valueHtml: string): string {
+  return `<span class="summary-mobile-item"><span>${escapeHtml(label)}</span><strong>${valueHtml}</strong></span>`;
+}
+
+function billList(bills: Bill[], timezone: string, returnTo: string): string {
   if (bills.length === 0) {
     return '<div class="empty">暂无明细</div>';
   }
 
-  return `<div class="bill-list">
-    ${bills
+  const groups = new Map<string, Bill[]>();
+  for (const bill of bills) {
+    const label = formatMonthDay(bill.occurredAt, timezone);
+    groups.set(label, [...(groups.get(label) ?? []), bill]);
+  }
+
+  return `<div class="day-groups">
+    ${[...groups.entries()]
       .map(
-        (bill) => `
-          <div class="bill">
-            <div>
-              <div class="bill-purpose">${escapeHtml(bill.purpose)}</div>
-              <div class="bill-meta">${escapeHtml(bill.bookName)} · ${formatDateTime(
-                bill.occurredAt,
-                timezone,
-              )}</div>
+        ([label, groupBills]) => `
+          <section class="day-group">
+            <h3>${escapeHtml(label)}</h3>
+            <div class="bill-list compact">
+              ${groupBills
+                .map(
+                  (bill) => `
+                    <div class="bill compact-bill">
+                      <strong class="bill-purpose">${escapeHtml(bill.purpose)}</strong>
+                      <span class="bill-time">${escapeHtml(formatTime(bill.occurredAt, timezone))}</span>
+                      <strong class="amount ${bill.amount > 0 ? "expense" : "income"}">${escapeHtml(
+                        formatAmount(bill.amount, bill.currency),
+                      )}</strong>
+                      <form class="bill-delete-form" method="post" action="/bills/${bill.id}/delete"
+                        data-confirm="删除这条记录？" data-once-form>
+                        <input type="hidden" name="returnTo" value="${escapeAttribute(returnTo)}" />
+                        <button class="icon-button bill-delete" type="submit" aria-label="删除记录">${trashIcon()}</button>
+                      </form>
+                    </div>
+                  `,
+                )
+                .join("")}
             </div>
-            <strong class="amount ${bill.amount > 0 ? "expense" : "income"}">${escapeHtml(
-              formatAmount(bill.amount, bill.currency),
-            )}</strong>
-          </div>
+          </section>
         `,
       )
       .join("")}
   </div>`;
+}
+
+function pagination(basePath: string, bills: PaginatedBills): string {
+  return `
+    <nav class="pagination" aria-label="明细分页">
+      <span>${bills.total === 0 ? "0" : `${bills.page}/${bills.totalPages}`} 页 · ${bills.total} 条</span>
+      <form method="get" action="${basePath}">
+        <label>
+          每页
+          <select name="pageSize" onchange="this.form.submit()">
+            ${[20, 50, 100]
+              .map(
+                (size) =>
+                  `<option value="${size}" ${size === bills.pageSize ? "selected" : ""}>${size}</option>`,
+              )
+              .join("")}
+          </select>
+        </label>
+      </form>
+      <span class="pager-buttons">
+        ${pageLink(basePath, "上一页", bills.page - 1, bills.pageSize, bills.page <= 1)}
+        ${pageLink(basePath, "下一页", bills.page + 1, bills.pageSize, bills.page >= bills.totalPages)}
+      </span>
+    </nav>
+  `;
+}
+
+function pageLink(
+  basePath: string,
+  label: string,
+  page: number,
+  pageSize: number,
+  disabled: boolean,
+): string {
+  if (disabled) {
+    return `<span class="button secondary disabled">${escapeHtml(label)}</span>`;
+  }
+
+  return `<a class="button secondary" href="${basePath}?page=${page}&pageSize=${pageSize}">${escapeHtml(
+    label,
+  )}</a>`;
+}
+
+function fabDrawer(book: Book, purposes: string[], idempotencyKey: string): string {
+  const datalistId = `purposes-${book.id}`;
+  return `
+    <button class="fab" type="button" data-dialog-open="bill-drawer" aria-label="新增记账">${plusIcon()}</button>
+    <dialog class="drawer" id="bill-drawer">
+      <form class="drawer-panel" method="post" action="/books/${book.id}/bills" data-once-form>
+        <input type="hidden" name="idempotencyKey" value="${escapeAttribute(idempotencyKey)}" />
+        <div class="drawer-handle"></div>
+        <section class="section-title">
+          <h2>新增记账</h2>
+          <button class="icon-button" type="button" data-dialog-close="bill-drawer" aria-label="关闭">×</button>
+        </section>
+        <label>
+          金额
+          <input name="amount" inputmode="decimal" required placeholder="例如 12 或 -3000" />
+        </label>
+        <label>
+          类型
+          <input name="purpose" list="${datalistId}" required placeholder="例如 饮料" />
+          <datalist id="${datalistId}">
+            ${purposes.map((purpose) => `<option value="${escapeAttribute(purpose)}"></option>`).join("")}
+          </datalist>
+        </label>
+        <button class="button" type="submit">保存</button>
+      </form>
+    </dialog>
+  `;
+}
+
+function pieChart(categories: SpendingCategory[], currency: string | null): string {
+  if (categories.length === 0) {
+    return '<div class="chart-panel empty">无数据</div>';
+  }
+
+  const colors = ["#68c59c", "#ff8f8f", "#e5b567", "#7aa7ff", "#c99cff", "#72d6d0"];
+  let cursor = 0;
+  const slices = categories
+    .map((category, index) => {
+      const start = cursor;
+      const end = cursor + category.percentage / 100;
+      cursor = end;
+      const color = colors[index % colors.length];
+      return `<path class="pie-slice" d="${pieSlicePath(70, 70, 58, start, end)}" fill="${color}"
+        tabindex="0" data-pie-slice data-label="${escapeAttribute(category.purpose)}"
+        data-value="${escapeAttribute(formatAmount(category.amount, currency))}"
+        data-percent="${category.percentage.toFixed(1)}%"></path>`;
+    })
+    .join("");
+
+  return `
+    <section class="chart-panel">
+      <div class="pie-layout">
+        <svg class="pie-chart" viewBox="0 0 140 140" role="img" aria-label="支出分类图">
+          ${slices}
+        </svg>
+        <div>
+          <p class="pie-focus" data-pie-focus>点击分类查看占比</p>
+          <div class="pie-legend">
+            ${categories
+              .map(
+                (category, index) => `
+                  <button type="button" data-pie-legend="${index}" data-label="${escapeAttribute(
+                    category.purpose,
+                  )}" data-value="${escapeAttribute(formatAmount(category.amount, currency))}"
+                    data-percent="${category.percentage.toFixed(1)}%">
+                    <span style="background:${colors[index % colors.length]}"></span>
+                    ${escapeHtml(category.purpose)}
+                    <strong>${escapeHtml(formatAmount(category.amount, currency))}</strong>
+                  </button>
+                `,
+              )
+              .join("")}
+          </div>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function pieSlicePath(cx: number, cy: number, radius: number, start: number, end: number): string {
+  if (end - start >= 0.9999) {
+    return `M ${cx} ${cy} m -${radius} 0 a ${radius} ${radius} 0 1 0 ${
+      radius * 2
+    } 0 a ${radius} ${radius} 0 1 0 -${radius * 2} 0`;
+  }
+
+  const startAngle = start * Math.PI * 2 - Math.PI / 2;
+  const endAngle = end * Math.PI * 2 - Math.PI / 2;
+  const x1 = cx + Math.cos(startAngle) * radius;
+  const y1 = cy + Math.sin(startAngle) * radius;
+  const x2 = cx + Math.cos(endAngle) * radius;
+  const y2 = cy + Math.sin(endAngle) * radius;
+  const largeArc = end - start > 0.5 ? 1 : 0;
+
+  return `M ${cx} ${cy} L ${x1.toFixed(2)} ${y1.toFixed(2)} A ${radius} ${radius} 0 ${largeArc} 1 ${x2.toFixed(
+    2,
+  )} ${y2.toFixed(2)} Z`;
+}
+
+function currencyLabel(book: Book): string {
+  return currencySymbol(book.currency) || "无币种";
+}
+
+function editIcon(): string {
+  return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4l10.5-10.5-4-4L4 16v4Z"></path><path d="m13.5 6.5 4 4"></path></svg>`;
+}
+
+function chartIcon(): string {
+  return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5"></path><path d="M4 19h16"></path><path d="M8 16v-5"></path><path d="M13 16V8"></path><path d="M18 16v-3"></path></svg>`;
+}
+
+function plusIcon(): string {
+  return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>`;
+}
+
+function trashIcon(): string {
+  return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M6 6l1 14h10l1-14"></path><path d="M10 11v5"></path><path d="M14 11v5"></path></svg>`;
 }
