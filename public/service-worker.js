@@ -1,4 +1,4 @@
-const CACHE_VERSION = "keepy-pwa-v1";
+const CACHE_VERSION = "keepy-pwa-v2";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGE_CACHE = `${CACHE_VERSION}-pages`;
 const API_CACHE = `${CACHE_VERSION}-api`;
@@ -50,6 +50,11 @@ self.addEventListener("fetch", (event) => {
 
   if (request.mode === "navigate") {
     event.respondWith(networkFirst(request, PAGE_CACHE, "/"));
+    return;
+  }
+
+  if (url.pathname === "/auth/avatar") {
+    event.respondWith(avatarNetworkFirst(request));
     return;
   }
 
@@ -106,6 +111,25 @@ async function networkFirst(request, cacheName, fallbackUrl) {
       if (fallback) {
         return fallback;
       }
+    }
+
+    return new Response("Offline", { status: 503, statusText: "Offline" });
+  }
+}
+
+async function avatarNetworkFirst(request) {
+  const cache = await caches.open(API_CACHE);
+  try {
+    const response = await fetch(request);
+    if (response.ok) {
+      await cache.put("/auth/avatar", response.clone());
+      await cache.put(request, response.clone());
+    }
+    return response;
+  } catch {
+    const cached = await cache.match("/auth/avatar");
+    if (cached) {
+      return cached;
     }
 
     return new Response("Offline", { status: 503, statusText: "Offline" });

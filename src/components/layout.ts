@@ -96,9 +96,8 @@ export function loginPage(botUsername: string): string {
 
 function avatar(user: User): string {
   const fallback = (user.firstName?.[0] ?? user.username?.[0] ?? "K").toUpperCase();
-  const source = user.photoUrl ?? "/auth/avatar";
   return `<span class="avatar-stack">
-    <img src="${escapeAttribute(source)}" alt="" data-avatar-img />
+    <img src="/auth/avatar" alt="" data-avatar-img />
     <span class="avatar-fallback" data-avatar-fallback hidden>${escapeHtml(fallback)}</span>
   </span>`;
 }
@@ -194,6 +193,9 @@ function miniAppInteractionScript(): string {
         if (avatar instanceof HTMLImageElement && avatar.dataset.keepyAvatarBound !== "true") {
           avatar.dataset.keepyAvatarBound = "true";
           avatar.addEventListener("load", () => {
+            const fallback = document.querySelector("[data-avatar-fallback]");
+            avatar.hidden = false;
+            if (fallback instanceof HTMLElement) fallback.hidden = true;
             const refreshAvatar = document.querySelector("[data-refresh-avatar]");
             refreshAvatar?.removeAttribute("aria-busy");
           });
@@ -406,12 +408,15 @@ export function style(): string {
 
     .avatar-stack {
       position: relative;
+      display: block;
       width: 32px;
       height: 32px;
       flex: 0 0 auto;
     }
 
     .avatar-stack img, .avatar-fallback {
+      position: absolute;
+      inset: 0;
       width: 32px;
       height: 32px;
       border-radius: 50%;
@@ -421,6 +426,10 @@ export function style(): string {
       color: var(--green-strong);
       font-weight: 700;
       object-fit: cover;
+    }
+
+    .avatar-stack img[hidden], .avatar-fallback[hidden] {
+      display: none;
     }
 
     .account-panel {
