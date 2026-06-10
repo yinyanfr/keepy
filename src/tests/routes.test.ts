@@ -207,6 +207,65 @@ test("uses bookId and month query params on the history page", async () => {
   assert.doesNotMatch(response.text, /type="month"/);
 });
 
+test("renders history charts without a title currency badge", async () => {
+  const book = { ...defaultBook, currency: "CNY", name: "月花费" };
+  const app = buildTestApp({
+    getBook: () => book,
+    getMonthSummary: (_userId, _bookId, range) => ({
+      ...emptySummary(range.key),
+      bills: [
+        {
+          amount: 12,
+          bookId: book.id,
+          bookName: book.name,
+          currency: book.currency,
+          id: 1,
+          occurredAt: new Date("2026-06-10T04:00:00.000Z"),
+          purpose: "吃饭",
+          userId: user.id,
+        },
+      ],
+      billCount: 1,
+      expenseTotal: 12,
+      netBalance: -12,
+    }),
+    getSpendingCategories: () => [{ amount: 12, percentage: 100, purpose: "吃饭" }],
+  });
+
+  const response = await get(app, "/history?bookId=1&month=2026-06");
+
+  assert.equal(response.status, 200);
+  assert.match(response.text, /data-chart-carousel/);
+  assert.match(response.text, /每日总消费/);
+  assert.doesNotMatch(response.text, /<span class="muted">¥<\/span>/);
+});
+
+test("shows book monthly metrics on the book list", async () => {
+  const budgetBook = {
+    ...defaultBook,
+    currency: "CNY",
+    monthlyBudget: 100,
+    name: "月花费",
+  };
+  const app = buildTestApp({
+    getCurrentMonthSummary: () => ({
+      ...emptySummary("2026-06"),
+      budgetRemaining: 58,
+      expenseTotal: 42,
+    }),
+    listBooks: () => [budgetBook],
+  });
+
+  const response = await get(app, "/books");
+
+  assert.equal(response.status, 200);
+  assert.match(response.text, /月花费/);
+  assert.match(response.text, /累计消费/);
+  assert.match(response.text, /¥42/);
+  assert.match(response.text, /本月余额/);
+  assert.match(response.text, /¥58/);
+});
+
 function buildTestApp(overrides: Partial<KeepyService>): express.Express {
   const app = express();
   app.use(express.urlencoded({ extended: false }));

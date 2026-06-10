@@ -19,32 +19,28 @@ export function appShell(input: {
       <header class="topbar">
         <a class="brand" href="/">Keepy</a>
         <div class="topbar-actions">
-          <div class="profile">
-            ${avatar(input.user)}
-            <span class="profile-text">
-              <span class="profile-name">${escapeHtml(displayName)}</span>
-              ${username ? `<span class="profile-handle">${escapeHtml(username)}</span>` : ""}
-            </span>
-          </div>
-          <details class="menu">
-            <summary aria-label="菜单">☰</summary>
-            <nav>
-              ${menuLink("/", "本月明细", input.active === "home")}
-              ${menuLink("/settings", "账本设置", input.active === "settings")}
-              ${menuLink("/books", "账本列表", input.active === "books")}
-              ${menuLink("/history", "历史记录", input.active === "history")}
-              <label class="theme-toggle">
-                <span>夜间模式</span>
-                <span class="switch">
-                  <input type="checkbox" data-theme-switch aria-label="夜间模式" />
-                  <span></span>
-                </span>
-              </label>
+          <details class="account-menu">
+            <summary class="profile" aria-label="账户">
+              ${avatar(input.user)}
+              <span class="profile-text">
+                <span class="profile-name">${escapeHtml(displayName)}</span>
+                ${username ? `<span class="profile-handle">${escapeHtml(username)}</span>` : ""}
+              </span>
+            </summary>
+            <nav class="account-panel">
+              <button type="button" data-refresh-avatar>刷新头像</button>
               <form method="post" action="/auth/logout">
                 <button type="submit">退出登录</button>
               </form>
             </nav>
           </details>
+          <label class="theme-switch" aria-label="昼夜模式">
+            <input type="checkbox" data-theme-switch aria-label="昼夜模式" />
+            <span class="theme-track" aria-hidden="true">
+              <span class="sun">☀</span>
+              <span class="moon">☾</span>
+            </span>
+          </label>
         </div>
       </header>
       ${input.body}
@@ -99,16 +95,12 @@ export function loginPage(botUsername: string): string {
 }
 
 function avatar(user: User): string {
-  if (user.photoUrl) {
-    return `<img src="${escapeAttribute(user.photoUrl)}" alt="" />`;
-  }
-
   const fallback = (user.firstName?.[0] ?? user.username?.[0] ?? "K").toUpperCase();
-  return `<span class="avatar-fallback">${escapeHtml(fallback)}</span>`;
-}
-
-function menuLink(href: string, label: string, active: boolean): string {
-  return `<a class="${active ? "active" : ""}" href="${href}">${escapeHtml(label)}</a>`;
+  const source = user.photoUrl ?? "/auth/avatar";
+  return `<span class="avatar-stack">
+    <img src="${escapeAttribute(source)}" alt="" data-avatar-img />
+    <span class="avatar-fallback" data-avatar-fallback hidden>${escapeHtml(fallback)}</span>
+  </span>`;
 }
 
 function themeBootScript(): string {
@@ -161,7 +153,49 @@ function miniAppInteractionScript(): string {
           if (app) app.dataset.deleteMode = enabled ? "true" : "false";
           deleteToggle.setAttribute("aria-pressed", enabled ? "true" : "false");
         }
+
+        const refreshAvatar = event.target.closest("[data-refresh-avatar]");
+        if (refreshAvatar) {
+          const avatar = document.querySelector("[data-avatar-img]");
+          const fallback = document.querySelector("[data-avatar-fallback]");
+          if (avatar instanceof HTMLImageElement) {
+            refreshAvatar.setAttribute("aria-busy", "true");
+            avatar.hidden = false;
+            if (fallback instanceof HTMLElement) fallback.hidden = true;
+            avatar.src = "/auth/avatar?refresh=" + Date.now();
+          }
+        }
+
+        const chartButton = event.target.closest("[data-chart-prev], [data-chart-next]");
+        if (chartButton) {
+          const carousel = chartButton.closest("[data-chart-carousel]");
+          const slides = carousel ? [...carousel.querySelectorAll("[data-chart-slide]")] : [];
+          const current = slides.findIndex((slide) => slide.classList.contains("active"));
+          if (current >= 0) {
+            const direction = chartButton.matches("[data-chart-next]") ? 1 : -1;
+            const next = (current + direction + slides.length) % slides.length;
+            slides[current]?.classList.remove("active");
+            slides[current]?.setAttribute("aria-hidden", "true");
+            slides[next]?.classList.add("active");
+            slides[next]?.removeAttribute("aria-hidden");
+          }
+        }
       });
+
+      const avatar = document.querySelector("[data-avatar-img]");
+      if (avatar instanceof HTMLImageElement) {
+        avatar.addEventListener("load", () => {
+          const refreshAvatar = document.querySelector("[data-refresh-avatar]");
+          refreshAvatar?.removeAttribute("aria-busy");
+        });
+        avatar.addEventListener("error", () => {
+          const fallback = document.querySelector("[data-avatar-fallback]");
+          avatar.hidden = true;
+          if (fallback instanceof HTMLElement) fallback.hidden = false;
+          const refreshAvatar = document.querySelector("[data-refresh-avatar]");
+          refreshAvatar?.removeAttribute("aria-busy");
+        });
+      }
 
       for (const dialog of document.querySelectorAll("dialog")) {
         dialog.addEventListener("click", (event) => {
@@ -295,12 +329,29 @@ export function style(): string {
       min-width: 0;
     }
 
+    .account-menu {
+      position: relative;
+      min-width: 0;
+    }
+
     .profile {
       display: flex;
       align-items: center;
       min-width: 0;
       gap: 8px;
+      padding: 2px;
+      border-radius: 999px;
       color: var(--ink);
+      cursor: pointer;
+      list-style: none;
+    }
+
+    .profile::-webkit-details-marker {
+      display: none;
+    }
+
+    .profile:hover {
+      background: var(--hover);
     }
 
     .profile-text {
@@ -327,7 +378,14 @@ export function style(): string {
       margin-top: 2px;
     }
 
-    .profile img, .avatar-fallback {
+    .avatar-stack {
+      position: relative;
+      width: 32px;
+      height: 32px;
+      flex: 0 0 auto;
+    }
+
+    .avatar-stack img, .avatar-fallback {
       width: 32px;
       height: 32px;
       border-radius: 50%;
@@ -336,33 +394,15 @@ export function style(): string {
       background: var(--hover);
       color: var(--green-strong);
       font-weight: 700;
-      flex: 0 0 auto;
+      object-fit: cover;
     }
 
-    .menu {
-      position: relative;
-    }
-
-    .menu summary {
-      width: 36px;
-      height: 36px;
-      display: grid;
-      place-items: center;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: var(--panel);
-      cursor: pointer;
-      list-style: none;
-    }
-
-    .menu summary::-webkit-details-marker { display: none; }
-
-    .menu nav {
+    .account-panel {
       position: absolute;
       top: 44px;
       right: 0;
       z-index: 2;
-      width: 172px;
+      width: 132px;
       padding: 8px;
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -370,7 +410,7 @@ export function style(): string {
       box-shadow: var(--shadow);
     }
 
-    .menu a, .menu button {
+    .account-panel button {
       width: 100%;
       display: block;
       padding: 10px 12px;
@@ -382,73 +422,81 @@ export function style(): string {
       cursor: pointer;
     }
 
-    .menu .active, .menu a:hover, .menu button:hover {
+    .account-panel form {
+      margin: 0;
+    }
+
+    .account-panel button:hover {
       background: var(--hover);
       color: var(--green-strong);
     }
 
-    .theme-toggle {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      padding: 10px 12px;
-      border-radius: 6px;
-      color: var(--ink);
+    .theme-switch {
+      position: relative;
+      width: 52px;
+      height: 30px;
+      flex: 0 0 auto;
       cursor: pointer;
     }
 
-    .theme-toggle:hover {
-      background: var(--hover);
-    }
-
-    .theme-toggle > span:first-child {
-      font-size: 14px;
-    }
-
-    .switch {
-      position: relative;
-      width: 38px;
-      height: 22px;
-      flex: 0 0 auto;
-    }
-
-    .switch input {
+    .theme-switch input {
       position: absolute;
       inset: 0;
       opacity: 0;
       cursor: pointer;
     }
 
-    .switch span {
+    .theme-track {
       position: absolute;
       inset: 0;
       border: 1px solid var(--line);
       border-radius: 999px;
-      background: var(--bg);
+      background: linear-gradient(90deg, #f5d47a, #d9eef8);
       transition: background 160ms ease, border-color 160ms ease;
     }
 
-    .switch span::after {
+    .theme-track::after {
       content: "";
       position: absolute;
       top: 3px;
       left: 3px;
-      width: 14px;
-      height: 14px;
+      width: 22px;
+      height: 22px;
       border-radius: 50%;
-      background: var(--muted);
+      background: #fff8d8;
+      box-shadow: 0 2px 6px rgba(31, 37, 35, 0.22);
       transition: transform 160ms ease, background 160ms ease;
     }
 
-    .switch input:checked + span {
-      border-color: var(--green);
-      background: color-mix(in srgb, var(--green) 28%, transparent);
+    .theme-track .sun,
+    .theme-track .moon {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-52%);
+      z-index: 1;
+      font-size: 13px;
+      line-height: 1;
+      pointer-events: none;
     }
 
-    .switch input:checked + span::after {
-      transform: translateX(16px);
-      background: var(--green-strong);
+    .theme-track .sun {
+      left: 8px;
+      color: #b96e13;
+    }
+
+    .theme-track .moon {
+      right: 9px;
+      color: #47606f;
+    }
+
+    .theme-switch input:checked + .theme-track {
+      border-color: var(--green);
+      background: linear-gradient(90deg, #20332f, #0f1720);
+    }
+
+    .theme-switch input:checked + .theme-track::after {
+      transform: translateX(22px);
+      background: #d5f3e4;
     }
 
     .section-title {
@@ -667,11 +715,24 @@ export function style(): string {
       gap: 12px;
     }
 
-    .day-group h3 {
-      margin: 0 0 6px;
+    .day-group-header {
+      display: flex;
+      min-height: 38px;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin: 0 0 8px;
       color: var(--muted);
-      font-size: 13px;
+      font-size: 18px;
       font-weight: 800;
+    }
+
+    .day-total {
+      color: var(--ink);
+      font-size: 18px;
+      font-variant-numeric: tabular-nums;
+      text-align: right;
+      white-space: nowrap;
     }
 
     .compact-bill {
@@ -885,6 +946,43 @@ export function style(): string {
 
     .book-row:first-child { border-top: 0; }
     .book-row:hover { background: var(--subtle); }
+
+    .book-row-main {
+      display: grid;
+      min-width: 0;
+      gap: 3px;
+    }
+
+    .book-row-main > strong {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .book-row-metrics {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 18px;
+      margin-top: 8px;
+    }
+
+    .book-row-metrics span {
+      display: grid;
+      gap: 1px;
+    }
+
+    .book-row-metrics small {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .book-row-metrics strong {
+      color: var(--green-strong);
+      font-size: 16px;
+      font-variant-numeric: tabular-nums;
+    }
+
     .badge {
       padding: 4px 8px;
       border-radius: 999px;
@@ -1047,6 +1145,50 @@ export function style(): string {
       margin-bottom: 14px;
     }
 
+    .chart-carousel {
+      position: relative;
+      min-height: 260px;
+      padding: 16px 48px;
+    }
+
+    .chart-slides {
+      min-width: 0;
+    }
+
+    .chart-slide {
+      display: none;
+    }
+
+    .chart-slide.active {
+      display: block;
+    }
+
+    .chart-nav {
+      position: absolute;
+      top: 50%;
+      z-index: 1;
+      width: 34px;
+      height: 42px;
+      transform: translateY(-50%);
+      border-color: transparent;
+      background: transparent;
+      color: var(--muted);
+      font-size: 34px;
+      line-height: 1;
+    }
+
+    .chart-nav:hover {
+      background: var(--hover);
+    }
+
+    .chart-nav.prev {
+      left: 8px;
+    }
+
+    .chart-nav.next {
+      right: 8px;
+    }
+
     .pie-layout {
       display: grid;
       grid-template-columns: 150px 1fr;
@@ -1110,6 +1252,63 @@ export function style(): string {
 
     .pie-legend strong {
       color: var(--green-strong);
+    }
+
+    .bar-chart {
+      display: grid;
+      gap: 18px;
+      min-height: 228px;
+      align-content: center;
+    }
+
+    .bar-chart h3 {
+      margin: 0;
+      color: var(--green-strong);
+      font-size: 18px;
+    }
+
+    .bar-rows {
+      display: grid;
+      gap: 12px;
+    }
+
+    .bar-row {
+      display: grid;
+      grid-template-columns: 54px minmax(0, 1fr) 7.5ch;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .bar-day {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .bar-track {
+      height: 16px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: var(--progress-track);
+    }
+
+    .bar-fill {
+      display: block;
+      height: 100%;
+      border-radius: inherit;
+      background: var(--green);
+    }
+
+    .bar-row strong {
+      color: var(--green-strong);
+      font-variant-numeric: tabular-nums;
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    .chart-empty {
+      box-shadow: none;
     }
 
     .login {
@@ -1207,6 +1406,19 @@ export function style(): string {
       }
       .pie-layout {
         grid-template-columns: 1fr;
+      }
+      .chart-carousel {
+        padding: 14px 40px;
+      }
+      .chart-nav.prev {
+        left: 4px;
+      }
+      .chart-nav.next {
+        right: 4px;
+      }
+      .bar-row {
+        grid-template-columns: 44px minmax(0, 1fr) 7.5ch;
+        gap: 8px;
       }
       .pie-chart {
         justify-self: center;

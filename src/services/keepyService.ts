@@ -200,7 +200,8 @@ export class KeepyService {
         .prepare(
           `
           UPDATE users
-          SET username = ?, first_name = ?, last_name = ?, photo_url = ?, updated_at = ?
+          SET username = ?, first_name = ?, last_name = ?,
+              photo_url = COALESCE(?, photo_url), updated_at = ?
           WHERE id = ?
         `,
         )

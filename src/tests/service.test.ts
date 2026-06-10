@@ -30,6 +30,30 @@ test("creates a user with one default book", () => {
   service.close();
 });
 
+test("keeps an existing user photo when a later profile has no photo", () => {
+  const service = KeepyService.fromPath(":memory:");
+
+  const first = service.ensureUser({
+    firstName: "Yan",
+    lastName: null,
+    photoUrl: "https://example.test/avatar.jpg",
+    telegramId: 1017,
+    username: "yan",
+  });
+  const second = service.ensureUser({
+    firstName: "Yan",
+    lastName: null,
+    photoUrl: null,
+    telegramId: 1017,
+    username: "yan",
+  });
+
+  assert.equal(first.user.photoUrl, "https://example.test/avatar.jpg");
+  assert.equal(second.user.photoUrl, "https://example.test/avatar.jpg");
+
+  service.close();
+});
+
 test("records bills and calculates monthly budget remaining", () => {
   const service = KeepyService.fromPath(":memory:");
   const { user, defaultBook } = service.ensureUser({
