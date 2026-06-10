@@ -51,6 +51,20 @@ export interface MonthSummary {
   netBalance: number;
 }
 
+export interface PaginatedBills {
+  items: Bill[];
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+}
+
+export interface SpendingCategory {
+  amount: number;
+  percentage: number;
+  purpose: string;
+}
+
 interface UserRow {
   first_name: string | null;
   id: number;
@@ -83,6 +97,11 @@ interface BillRow {
   user_id: number;
 }
 
+interface SpendingCategoryRow {
+  amount: number;
+  purpose: string;
+}
+
 export interface UpdateBookInput {
   currency: string | null;
   currentBalance: number | null;
@@ -102,6 +121,13 @@ export class BookNotFoundError extends Error {
   constructor(message = "Book not found.") {
     super(message);
     this.name = "BookNotFoundError";
+  }
+}
+
+export class BookDeleteError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "BookDeleteError";
   }
 }
 
@@ -357,6 +383,23 @@ export class KeepyService {
     return book;
   }
 
+  deleteBook(userId: number, bookId: number): void {
+    const book = this.getBook(userId, bookId);
+    if (!book) {
+      throw new BookNotFoundError();
+    }
+
+    if (book.isDefault) {
+      throw new BookDeleteError("默认账本不能删除。");
+    }
+
+    if (this.listBooks(userId).length <= 1) {
+      throw new BookDeleteError("至少需要保留一个账本。");
+    }
+
+    this.db.prepare("DELETE FROM books WHERE user_id = ? AND id = ?").run(userId, bookId);
+  }
+
   setDefaultBook(userId: number, bookId: number): Book {
     const now = new Date().toISOString();
     const update = this.db.transaction(() => {
@@ -391,36 +434,22 @@ export class KeepyService {
     const book = parsed.bookName
       ? (this.findBookByName(user.id, parsed.bookName) ?? this.ensureDefaultBook(user.id))
       : this.ensureDefaultBook(user.id);
-    const now = new Date().toISOString();
+    return this.createBill(user, book, parsed.amount, parsed.purpose, occurredAt);
+  }
 
-    const create = this.db.transaction(() => {
-      const result = this.db
-        .prepare(
-          `
-          INSERT INTO bills (user_id, book_id, amount, purpose, occurred_at, created_at)
-          VALUES (?, ?, ?, ?, ?, ?)
-        `,
-        )
-        .run(user.id, book.id, parsed.amount, parsed.purpose, occurredAt.toISOString(), now);
-
-      if (book.currentBalance !== null) {
-        this.db
-          .prepare(
-            "UPDATE books SET current_balance = current_balance - ?, updated_at = ? WHERE id = ?",
-          )
-          .run(parsed.amount, now, book.id);
-      }
-
-      return Number(result.lastInsertRowid);
-    });
-
-    const bill = this.getBill(create());
-    const updatedBook = this.getBook(user.id, book.id);
-    if (!bill || !updatedBook) {
-      throw new Error("Failed to load created bill.");
+  recordBillForBook(
+    user: User,
+    bookId: number,
+    amount: number,
+    purpose: string,
+    occurredAt = new Date(),
+  ): { bill: Bill; book: Book } {
+    const book = this.getBook(user.id, bookId);
+    if (!book) {
+      throw new BookNotFoundError();
     }
 
-    return { bill, book: updatedBook };
+    return this.createBill(user, book, amount, purpose, occurredAt);
   }
 
   getBill(billId: number): Bill | null {
@@ -483,6 +512,100 @@ export class KeepyService {
       .map(mapBill);
   }
 
+  listBillsForRangePaginated(
+    userId: number,
+    bookId: number,
+    range: MonthRange,
+    page = 1,
+    pageSize = 20,
+  ): PaginatedBills {
+    const safePageSize = [20, 50, 100].includes(pageSize) ? pageSize : 20;
+    const total =
+      this.db
+        .prepare<[number, number, string, string], { count: number }>(
+          `
+        SELECT COUNT(*) AS count
+        FROM bills
+        WHERE user_id = ?
+          AND book_id = ?
+          AND occurred_at >= ?
+          AND occurred_at < ?
+      `,
+        )
+        .get(userId, bookId, range.start.toISOString(), range.end.toISOString())?.count ?? 0;
+    const totalPages = Math.max(Math.ceil(total / safePageSize), 1);
+    const safePage = Math.min(Math.max(page, 1), totalPages);
+    const offset = (safePage - 1) * safePageSize;
+
+    const items = this.db
+      .prepare<[number, number, string, string, number, number], BillRow>(
+        `
+        SELECT bills.*, books.name AS book_name, books.currency
+        FROM bills
+        JOIN books ON books.id = bills.book_id
+        WHERE bills.user_id = ?
+          AND bills.book_id = ?
+          AND bills.occurred_at >= ?
+          AND bills.occurred_at < ?
+        ORDER BY bills.occurred_at DESC, bills.id DESC
+        LIMIT ? OFFSET ?
+      `,
+      )
+      .all(userId, bookId, range.start.toISOString(), range.end.toISOString(), safePageSize, offset)
+      .map(mapBill);
+
+    return {
+      items,
+      page: safePage,
+      pageSize: safePageSize,
+      total,
+      totalPages,
+    };
+  }
+
+  listPurposes(userId: number): string[] {
+    return this.db
+      .prepare<[number], { purpose: string }>(
+        `
+        SELECT DISTINCT purpose
+        FROM bills
+        WHERE user_id = ?
+        ORDER BY purpose COLLATE NOCASE
+      `,
+      )
+      .all(userId)
+      .map((row) => row.purpose);
+  }
+
+  getSpendingCategories(userId: number, bookId: number, range: MonthRange): SpendingCategory[] {
+    const rows = this.db
+      .prepare<[number, number, string, string], SpendingCategoryRow>(
+        `
+        SELECT purpose, SUM(amount) AS amount
+        FROM bills
+        WHERE user_id = ?
+          AND book_id = ?
+          AND occurred_at >= ?
+          AND occurred_at < ?
+          AND amount > 0
+        GROUP BY purpose
+        ORDER BY amount DESC, purpose
+      `,
+      )
+      .all(userId, bookId, range.start.toISOString(), range.end.toISOString());
+    const total = rows.reduce((sum, row) => sum + row.amount, 0);
+
+    if (total <= 0) {
+      return [];
+    }
+
+    return rows.map((row) => ({
+      amount: row.amount,
+      percentage: (row.amount / total) * 100,
+      purpose: row.purpose,
+    }));
+  }
+
   getHistory(user: User): { bills: Bill[]; monthKey: string }[] {
     const bills = this.db
       .prepare<[number], BillRow>(
@@ -511,6 +634,46 @@ export class KeepyService {
 
   getSummaryForMonthKey(user: User, bookId: number, monthKey: string): MonthSummary {
     return this.getMonthSummary(user.id, bookId, monthRangeFromKey(monthKey, user.timezone));
+  }
+
+  private createBill(
+    user: User,
+    book: Book,
+    amount: number,
+    purpose: string,
+    occurredAt: Date,
+  ): { bill: Bill; book: Book } {
+    const now = new Date().toISOString();
+    const cleanedPurpose = cleanName(purpose);
+
+    const create = this.db.transaction(() => {
+      const result = this.db
+        .prepare(
+          `
+          INSERT INTO bills (user_id, book_id, amount, purpose, occurred_at, created_at)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `,
+        )
+        .run(user.id, book.id, amount, cleanedPurpose, occurredAt.toISOString(), now);
+
+      if (book.currentBalance !== null) {
+        this.db
+          .prepare(
+            "UPDATE books SET current_balance = current_balance - ?, updated_at = ? WHERE id = ?",
+          )
+          .run(amount, now, book.id);
+      }
+
+      return Number(result.lastInsertRowid);
+    });
+
+    const bill = this.getBill(create());
+    const updatedBook = this.getBook(user.id, book.id);
+    if (!bill || !updatedBook) {
+      throw new Error("Failed to load created bill.");
+    }
+
+    return { bill, book: updatedBook };
   }
 }
 

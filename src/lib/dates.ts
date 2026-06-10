@@ -96,3 +96,16 @@ export function formatDateTime(date: Date, timeZone: string): string {
     part(parts, "minute"),
   ).padStart(2, "0")}`;
 }
+
+export function formatMonthDay(date: Date, timeZone: string): string {
+  const parts = getTimeZoneParts(date, timeZone);
+  return `${part(parts, "month")}月${part(parts, "day")}日`;
+}
+
+export function formatTime(date: Date, timeZone: string): string {
+  const parts = getTimeZoneParts(date, timeZone);
+  return `${String(part(parts, "hour")).padStart(2, "0")}:${String(part(parts, "minute")).padStart(
+    2,
+    "0",
+  )}`;
+}

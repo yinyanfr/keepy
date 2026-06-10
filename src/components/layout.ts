@@ -51,6 +51,7 @@ export function appShell(input: {
     </main>
     ${style()}
     ${themeToggleScript()}
+    ${miniAppInteractionScript()}
     `,
   );
 }
@@ -133,6 +134,50 @@ function themeToggleScript(): string {
       };
       input.checked = document.documentElement.dataset.theme === "dark";
       input.addEventListener("change", () => apply(input.checked ? "dark" : "light"));
+    })();
+  </script>`;
+}
+
+function miniAppInteractionScript(): string {
+  return `<script>
+    (() => {
+      document.addEventListener("click", (event) => {
+        const openTarget = event.target.closest("[data-dialog-open]");
+        if (openTarget) {
+          const dialog = document.getElementById(openTarget.dataset.dialogOpen);
+          if (dialog && typeof dialog.showModal === "function") dialog.showModal();
+        }
+
+        const closeTarget = event.target.closest("[data-dialog-close]");
+        if (closeTarget) {
+          const dialog = document.getElementById(closeTarget.dataset.dialogClose);
+          if (dialog && typeof dialog.close === "function") dialog.close();
+        }
+      });
+
+      for (const dialog of document.querySelectorAll("dialog")) {
+        dialog.addEventListener("click", (event) => {
+          if (event.target === dialog) dialog.close();
+        });
+      }
+
+      const focus = document.querySelector("[data-pie-focus]");
+      const showSlice = (element) => {
+        if (!element || !focus) return;
+        document.querySelectorAll("[data-pie-slice], [data-pie-legend]").forEach((item) => {
+          item.classList.remove("active");
+        });
+        element.classList.add("active");
+        const label = element.dataset.label;
+        const value = element.dataset.value;
+        const percent = element.dataset.percent;
+        focus.textContent = label + " · " + value + " · " + percent;
+      };
+
+      document.querySelectorAll("[data-pie-slice], [data-pie-legend]").forEach((element) => {
+        element.addEventListener("click", () => showSlice(element));
+        element.addEventListener("focus", () => showSlice(element));
+      });
     })();
   </script>`;
 }
@@ -384,7 +429,48 @@ export function style(): string {
       font-size: 22px;
     }
 
+    .title-row h1 {
+      display: flex;
+      align-items: baseline;
+      min-width: 0;
+      gap: 8px;
+    }
+
+    .title-row h1 span {
+      color: var(--muted);
+      font-size: 16px;
+      font-weight: 700;
+    }
+
     .muted { color: var(--muted); }
+
+    .icon-button {
+      width: 38px;
+      height: 38px;
+      display: inline-grid;
+      place-items: center;
+      flex: 0 0 auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      color: var(--ink);
+      cursor: pointer;
+    }
+
+    .icon-button:hover {
+      background: var(--hover);
+      color: var(--green-strong);
+    }
+
+    .icon-button svg {
+      width: 19px;
+      height: 19px;
+      fill: none;
+      stroke: currentColor;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-width: 2;
+    }
 
     .stats {
       display: grid;
@@ -494,7 +580,13 @@ export function style(): string {
       white-space: nowrap;
     }
 
-    .stat, .card, .form-panel, .bill-list, .empty {
+    .summary-item a, .summary-mobile-item a {
+      color: var(--green-strong);
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+
+    .stat, .card, .form-panel, .bill-list, .empty, .chart-panel, .danger-zone {
       border: 1px solid var(--line);
       border-radius: 8px;
       background: var(--panel);
@@ -528,6 +620,36 @@ export function style(): string {
     .bill:first-child { border-top: 0; }
     .bill-purpose { font-weight: 700; }
     .bill-meta { color: var(--muted); font-size: 13px; }
+    .day-groups {
+      display: grid;
+      gap: 12px;
+    }
+
+    .day-group h3 {
+      margin: 0 0 6px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .compact-bill {
+      grid-template-columns: minmax(0, 1fr) auto auto;
+      align-items: center;
+      padding: 10px 12px;
+    }
+
+    .compact-bill .bill-purpose {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .bill-time {
+      color: var(--muted);
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
     .amount.expense { color: var(--red); }
     .amount.income { color: var(--green); }
 
@@ -547,6 +669,42 @@ export function style(): string {
       border-radius: 8px;
       background: var(--panel);
       box-shadow: var(--shadow);
+    }
+
+    .month-picker > span {
+      display: grid;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .month-picker-button {
+      width: 100%;
+      min-height: 46px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 9px 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      color: var(--ink);
+      cursor: pointer;
+      text-align: left;
+    }
+
+    .month-picker-button:hover {
+      background: var(--hover);
+    }
+
+    .month-picker-button strong {
+      font-size: 16px;
+    }
+
+    .month-picker-button span {
+      color: var(--muted);
+      font-size: 13px;
     }
 
     label {
@@ -589,6 +747,46 @@ export function style(): string {
       color: var(--ink);
     }
 
+    .button.danger {
+      background: var(--red);
+      color: white;
+    }
+
+    .button.disabled {
+      opacity: 0.45;
+      pointer-events: none;
+    }
+
+    .pagination {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .pagination form label {
+      grid-auto-flow: column;
+      align-items: center;
+    }
+
+    .pagination select {
+      min-height: 36px;
+      padding: 6px 8px;
+    }
+
+    .pager-buttons {
+      display: flex;
+      gap: 6px;
+    }
+
+    .pager-buttons .button {
+      min-height: 36px;
+      padding: 7px 10px;
+    }
+
     .book-row {
       display: grid;
       grid-template-columns: 1fr auto;
@@ -609,10 +807,213 @@ export function style(): string {
       font-weight: 700;
     }
 
+    .danger-zone {
+      display: grid;
+      gap: 10px;
+      margin-top: 16px;
+      padding: 14px;
+    }
+
+    .danger-zone h2 {
+      margin: 0;
+      font-size: 18px;
+    }
+
     .empty {
       padding: 18px;
       color: var(--muted);
       text-align: center;
+    }
+
+    dialog {
+      border: 0;
+      padding: 0;
+      background: transparent;
+      color: var(--ink);
+    }
+
+    dialog::backdrop {
+      background: rgba(0, 0, 0, 0.42);
+    }
+
+    .dialog-card {
+      width: min(calc(100vw - 32px), 360px);
+      display: grid;
+      gap: 12px;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+
+    .dialog-card h2, .dialog-card p {
+      margin: 0;
+    }
+
+    .month-dialog-card {
+      width: min(calc(100vw - 32px), 380px);
+    }
+
+    .month-dialog-head {
+      display: grid;
+      grid-template-columns: 38px 1fr 38px;
+      align-items: center;
+      gap: 10px;
+      text-align: center;
+    }
+
+    .month-dialog-head strong {
+      font-size: 18px;
+    }
+
+    .month-dialog-head .icon-button {
+      font-size: 28px;
+      line-height: 1;
+    }
+
+    .month-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .month-grid a {
+      min-height: 48px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--bg);
+      color: var(--ink);
+      font-weight: 800;
+    }
+
+    .month-grid a:hover, .month-grid a.active {
+      border-color: var(--green);
+      background: var(--hover);
+      color: var(--green-strong);
+    }
+
+    .drawer {
+      width: min(100%, 760px);
+      max-width: none;
+      margin: auto auto 0;
+    }
+
+    .drawer-panel {
+      display: grid;
+      gap: 14px;
+      padding: 10px 16px 18px;
+      border: 1px solid var(--line);
+      border-bottom: 0;
+      border-radius: 18px 18px 0 0;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+
+    .drawer-handle {
+      width: 40px;
+      height: 4px;
+      margin: 2px auto 0;
+      border-radius: 999px;
+      background: var(--line);
+    }
+
+    .fab {
+      position: fixed;
+      right: max(18px, calc((100vw - 760px) / 2 + 18px));
+      bottom: 18px;
+      z-index: 3;
+      width: 56px;
+      height: 56px;
+      display: grid;
+      place-items: center;
+      border: 0;
+      border-radius: 50%;
+      background: var(--green);
+      color: white;
+      box-shadow: var(--shadow);
+      cursor: pointer;
+    }
+
+    .fab svg {
+      width: 26px;
+      height: 26px;
+      fill: none;
+      stroke: currentColor;
+      stroke-linecap: round;
+      stroke-width: 2.4;
+    }
+
+    .chart-panel {
+      padding: 14px;
+      margin-bottom: 14px;
+    }
+
+    .pie-layout {
+      display: grid;
+      grid-template-columns: 150px 1fr;
+      gap: 16px;
+      align-items: center;
+    }
+
+    .pie-chart {
+      width: 150px;
+      height: 150px;
+      overflow: visible;
+    }
+
+    .pie-slice {
+      cursor: pointer;
+      outline: none;
+      transition: opacity 160ms ease, transform 160ms ease;
+      transform-origin: 70px 70px;
+    }
+
+    .pie-slice:hover, .pie-slice:focus, .pie-slice.active {
+      opacity: 0.86;
+      transform: scale(1.03);
+    }
+
+    .pie-focus {
+      margin: 0 0 10px;
+      color: var(--green-strong);
+      font-weight: 800;
+    }
+
+    .pie-legend {
+      display: grid;
+      gap: 6px;
+    }
+
+    .pie-legend button {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+      padding: 8px;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--ink);
+      cursor: pointer;
+      text-align: left;
+    }
+
+    .pie-legend button:hover, .pie-legend button.active {
+      border-color: var(--line);
+      background: var(--hover);
+    }
+
+    .pie-legend span {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+
+    .pie-legend strong {
+      color: var(--green-strong);
     }
 
     .login {
@@ -649,6 +1050,11 @@ export function style(): string {
     @media (max-width: 480px) {
       .app { padding: 14px 12px; }
       .stats { grid-template-columns: 1fr; }
+      .title-row h1 {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
       .summary-mobile-trigger {
         display: grid;
         gap: 10px;
@@ -665,6 +1071,36 @@ export function style(): string {
       .month-picker { grid-template-columns: 1fr; }
       .profile-text { max-width: 104px; }
       .section-title h1, .section-title h2 { font-size: 20px; }
+      .compact-bill {
+        grid-template-columns: minmax(0, 1fr) auto auto;
+        gap: 8px;
+        padding: 9px 10px;
+      }
+      .amount {
+        font-size: 15px;
+        white-space: nowrap;
+      }
+      .pagination {
+        align-items: stretch;
+        flex-wrap: wrap;
+      }
+      .pager-buttons {
+        width: 100%;
+      }
+      .pager-buttons .button {
+        flex: 1;
+        text-align: center;
+      }
+      .pie-layout {
+        grid-template-columns: 1fr;
+      }
+      .pie-chart {
+        justify-self: center;
+      }
+      .fab {
+        right: 16px;
+        bottom: 16px;
+      }
     }
   </style>`;
 }
