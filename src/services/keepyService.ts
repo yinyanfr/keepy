@@ -777,7 +777,8 @@ export class KeepyService {
     return {
       billCount: bills.length,
       bills,
-      budgetRemaining: book.monthlyBudget === null ? null : book.monthlyBudget - expenseTotal,
+      budgetRemaining:
+        book.monthlyBudget === null ? null : book.monthlyBudget + incomeTotal - expenseTotal,
       expenseTotal,
       incomeTotal,
       monthKey: range.key,

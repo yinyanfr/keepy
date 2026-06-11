@@ -354,6 +354,31 @@ test("shows book monthly metrics on the book list", async () => {
   assert.match(response.text, /<dialog class="drawer" id="book-drawer">/);
 });
 
+test("caps monthly balance progress at 100% when income pushes balance above budget", async () => {
+  const budgetBook = {
+    ...defaultBook,
+    currency: "CNY",
+    monthlyBudget: 100,
+    name: "月花费",
+  };
+  const app = buildTestApp({
+    getMonthSummary: () => ({
+      ...emptySummary("2026-06"),
+      budgetRemaining: 180,
+      expenseTotal: 20,
+      incomeTotal: 100,
+      netBalance: 80,
+    }),
+    getBook: () => budgetBook,
+  });
+
+  const response = await get(app, "/books/1");
+
+  assert.equal(response.status, 200);
+  assert.match(response.text, /width: 100.00%/);
+  assert.match(response.text, /¥180/);
+});
+
 test("renders user settings with timezone selector instead of an account dropdown", async () => {
   const app = buildTestApp();
 

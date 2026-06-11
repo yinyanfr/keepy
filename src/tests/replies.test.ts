@@ -26,7 +26,7 @@ test("formats bot bill confirmation with budget remaining", () => {
     summary: {
       billCount: 1,
       bills: [],
-      budgetRemaining: 88,
+      budgetRemaining: 108,
       expenseTotal: 12,
       incomeTotal: 0,
       monthKey: "2026-06",
@@ -45,7 +45,7 @@ test("formats bot bill confirmation with budget remaining", () => {
 
   assert.match(text, /成功于2026-06-09 12:00/);
   assert.match(text, /用于午饭的¥12/);
-  assert.match(text, /预算余额¥88/);
+  assert.match(text, /预算余额¥108/);
 });
 
 test("formats bot bill confirmation with the user timezone", () => {

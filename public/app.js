@@ -472,13 +472,14 @@
     const expense = Number(strip.dataset.baseExpense || 0) + pendingExpenseTotal(pending);
     const income = Number(strip.dataset.baseIncome || 0) + pendingIncomeTotal(pending);
     const net = Number(strip.dataset.baseNet || 0) + pendingNetTotal(pending);
+    const balance = monthlyBudget === null ? null : monthlyBudget + income - expense;
 
     setSummaryValue("expense", formatAmount(expense, currency));
     setSummaryValue("income", formatAmount(income, currency));
     setSummaryValue("net", formatAmount(net, currency));
-    if (monthlyBudget !== null) {
-      setSummaryValue("budget", formatAmount(monthlyBudget - expense, currency));
-      updateBudgetProgress(strip, expense, monthlyBudget);
+    if (balance !== null) {
+      setSummaryValue("budget", formatAmount(balance, currency));
+      updateBudgetProgress(strip, balance, monthlyBudget);
     }
   }
 
@@ -500,10 +501,10 @@
     });
   }
 
-  function updateBudgetProgress(strip, expense, monthlyBudget) {
+  function updateBudgetProgress(strip, balance, monthlyBudget) {
     const progress = strip.querySelector("[data-budget-progress]");
     if (!progress || monthlyBudget <= 0) return;
-    const width = Math.min(Math.max((expense / monthlyBudget) * 100, 0), 100);
+    const width = Math.min(Math.max((balance / monthlyBudget) * 100, 0), 100);
     progress.style.width = `${width.toFixed(2)}%`;
   }
 

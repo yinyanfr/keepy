@@ -110,7 +110,7 @@ test("records bills and calculates monthly budget remaining", () => {
   assert.equal(summary.expenseTotal, 12);
   assert.equal(summary.incomeTotal, 20);
   assert.equal(summary.netBalance, 8);
-  assert.equal(summary.budgetRemaining, 88);
+  assert.equal(summary.budgetRemaining, 108);
 
   service.close();
 });

@@ -386,7 +386,7 @@ function summaryPanel(book: Book, summary: MonthSummary, settingsUrl: string): s
       : escapeHtml(formatAmount(summary.budgetRemaining, book.currency));
   const progress =
     hasBudget && book.monthlyBudget && book.monthlyBudget > 0
-      ? Math.min(Math.max((summary.expenseTotal / book.monthlyBudget) * 100, 0), 100)
+      ? Math.min(Math.max(((summary.budgetRemaining ?? 0) / book.monthlyBudget) * 100, 0), 100)
       : null;
 
   return `
@@ -405,7 +405,7 @@ function summaryPanel(book: Book, summary: MonthSummary, settingsUrl: string): s
         ${
           progress === null
             ? ""
-            : `<span class="budget-progress" aria-label="预算使用进度">
+            : `<span class="budget-progress" aria-label="本月余额进度">
                 <span data-budget-progress style="width: ${progress.toFixed(2)}%"></span>
               </span>`
         }
