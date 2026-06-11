@@ -1,7 +1,7 @@
 import { appShell, loginPage } from "../../components/layout.js";
 import { formatMonthDay, formatTime } from "../../lib/dates.js";
 import { escapeAttribute, escapeHtml } from "../../lib/html.js";
-import { currencySymbol, formatAmount } from "../../lib/money.js";
+import { formatAmount } from "../../lib/money.js";
 import { commonTimeZones, timeZoneLabel } from "../../lib/timezones.js";
 import type { AppConfig } from "../../configs/env.js";
 import type {
@@ -190,7 +190,6 @@ export function renderBooks(input: {
               <a class="book-row" href="/books/${book.id}">
                 <div class="book-row-main">
                   <strong>${escapeHtml(book.name)}</strong>
-                  <div class="bill-meta">${escapeHtml(currencyLabel(book))}</div>
                   <div class="book-row-metrics">
                     <span>
                       <small>累计消费</small>
@@ -213,24 +212,7 @@ export function renderBooks(input: {
           .join("")}
       </div>
 
-      <section class="section-title">
-        <h2>增加账本</h2>
-      </section>
-      <form class="form-panel" method="post" action="/books">
-        <label>
-          名字
-          <input name="name" required />
-        </label>
-        <label>
-          币种
-          <input name="currency" placeholder="可留空" />
-        </label>
-        <label>
-          月预算
-          <input name="monthlyBudget" inputmode="decimal" />
-        </label>
-        <button class="button" type="submit">增加</button>
-      </form>
+      ${bookDrawer()}
     `,
   });
 }
@@ -569,6 +551,34 @@ function fabDrawer(book: Book, purposes: string[], idempotencyKey: string): stri
   `;
 }
 
+function bookDrawer(): string {
+  return `
+    <button class="fab" type="button" data-dialog-open="book-drawer" aria-label="增加账本">${plusIcon()}</button>
+    <dialog class="drawer" id="book-drawer">
+      <form class="drawer-panel" method="post" action="/books" data-once-form>
+        <div class="drawer-handle"></div>
+        <section class="section-title">
+          <h2>增加账本</h2>
+          <button class="icon-button" type="button" data-dialog-close="book-drawer" aria-label="关闭">×</button>
+        </section>
+        <label>
+          名字
+          <input name="name" required />
+        </label>
+        <label>
+          币种
+          <input name="currency" placeholder="可留空" />
+        </label>
+        <label>
+          月预算
+          <input name="monthlyBudget" inputmode="decimal" />
+        </label>
+        <button class="button" type="submit">保存</button>
+      </form>
+    </dialog>
+  `;
+}
+
 function chartCarousel(
   categories: SpendingCategory[],
   bills: Bill[],
@@ -722,10 +732,6 @@ function pieSlicePath(cx: number, cy: number, radius: number, start: number, end
   return `M ${cx} ${cy} L ${x1.toFixed(2)} ${y1.toFixed(2)} A ${radius} ${radius} 0 ${largeArc} 1 ${x2.toFixed(
     2,
   )} ${y2.toFixed(2)} Z`;
-}
-
-function currencyLabel(book: Book): string {
-  return currencySymbol(book.currency) || "无币种";
 }
 
 function editIcon(): string {

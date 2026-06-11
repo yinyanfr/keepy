@@ -322,6 +322,9 @@ test("shows book monthly metrics on the book list", async () => {
   assert.match(response.text, /¥42/);
   assert.match(response.text, /本月余额/);
   assert.match(response.text, /¥58/);
+  assert.doesNotMatch(response.text, /<div class="bill-meta">¥<\/div>/);
+  assert.match(response.text, /data-dialog-open="book-drawer"/);
+  assert.match(response.text, /<dialog class="drawer" id="book-drawer">/);
 });
 
 test("renders user settings with timezone selector instead of an account dropdown", async () => {
