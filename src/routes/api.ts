@@ -227,9 +227,7 @@ function serializeUser(user: User): Record<string, unknown> {
 function serializeBook(book: Book): Record<string, unknown> {
   return {
     currency: book.currency,
-    currentBalance: book.currentBalance,
     id: book.id,
-    initialBalance: book.initialBalance,
     isDefault: book.isDefault,
     monthlyBudget: book.monthlyBudget,
     name: book.name,

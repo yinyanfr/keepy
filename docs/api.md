@@ -118,11 +118,9 @@ Form fields:
 
 - `name`: string, optional in transport, falls back to current book name
 - `currency`: string or empty
-- `initialBalance`: number or empty
-- `currentBalance`: number or empty
 - `monthlyBudget`: number or empty
 
-Empty numeric fields clear the stored value.
+An empty `monthlyBudget` clears the stored budget.
 
 Success:
 

@@ -26,9 +26,7 @@ const user: User = {
 
 const defaultBook: Book = {
   currency: null,
-  currentBalance: null,
   id: 1,
-  initialBalance: null,
   isDefault: true,
   monthlyBudget: null,
   name: "默认",
@@ -173,11 +171,9 @@ test("rejects zero amounts from the mini app form", async () => {
   assert.match(response.text, /记账内容无效/);
 });
 
-test("passes submitted balances when saving book settings", async () => {
+test("passes submitted book settings without balance fields", async () => {
   let received: {
     currency: string | null;
-    currentBalance: number | null;
-    initialBalance: number | null;
     monthlyBudget: number | null;
     name: string;
   } | null = null;
@@ -185,15 +181,11 @@ test("passes submitted balances when saving book settings", async () => {
     updateBook: (_userId, _bookId, input) => {
       received = {
         currency: input.currency,
-        currentBalance: input.currentBalance,
-        initialBalance: input.initialBalance,
         monthlyBudget: input.monthlyBudget,
         name: input.name,
       };
       return {
         ...defaultBook,
-        currentBalance: input.currentBalance,
-        initialBalance: input.initialBalance,
         monthlyBudget: input.monthlyBudget,
         name: input.name,
       };
@@ -203,15 +195,13 @@ test("passes submitted balances when saving book settings", async () => {
   const response = await post(
     app,
     "/books/1/settings",
-    "name=%E9%BB%98%E8%AE%A4&initialBalance=100&currentBalance=88&monthlyBudget=50",
+    "name=%E9%BB%98%E8%AE%A4&monthlyBudget=50",
     "manual",
   );
 
   assert.equal(response.status, 302);
   assert.deepEqual(received, {
     currency: null,
-    currentBalance: 88,
-    initialBalance: 100,
     monthlyBudget: 50,
     name: "默认",
   });

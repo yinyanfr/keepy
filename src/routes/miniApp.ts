@@ -56,8 +56,6 @@ export function createMiniAppRouter(service: KeepyService, config: AppConfig): R
     try {
       const updatedBook = service.updateBook(user.id, book.id, {
         currency: textBody(req, "currency"),
-        currentBalance: numberBody(req, "currentBalance"),
-        initialBalance: numberBody(req, "initialBalance"),
         monthlyBudget: numberBody(req, "monthlyBudget"),
         name: textBody(req, "name") ?? book.name,
       });
@@ -170,8 +168,6 @@ export function createMiniAppRouter(service: KeepyService, config: AppConfig): R
     try {
       const updatedBook = service.updateBook(user.id, book.id, {
         currency: textBody(req, "currency"),
-        currentBalance: numberBody(req, "currentBalance"),
-        initialBalance: numberBody(req, "initialBalance"),
         monthlyBudget: numberBody(req, "monthlyBudget"),
         name: textBody(req, "name") ?? book.name,
       });

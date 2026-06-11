@@ -15,9 +15,7 @@ export interface User {
 
 export interface Book {
   currency: string | null;
-  currentBalance: number | null;
   id: number;
-  initialBalance: number | null;
   isDefault: boolean;
   monthlyBudget: number | null;
   name: string;
@@ -98,9 +96,7 @@ interface UserRow {
 
 interface BookRow {
   currency: string | null;
-  current_balance: number | null;
   id: number;
-  initial_balance: number | null;
   is_default: 0 | 1;
   monthly_budget: number | null;
   name: string;
@@ -146,8 +142,6 @@ interface BotEntryBillRow {
 
 export interface UpdateBookInput {
   currency: string | null;
-  currentBalance: number | null;
-  initialBalance: number | null;
   monthlyBudget: number | null;
   name: string;
 }
@@ -258,10 +252,9 @@ export class KeepyService {
         .prepare(
           `
           INSERT INTO books (
-            user_id, name, currency, initial_balance, current_balance, monthly_budget,
-            is_default, created_at, updated_at
+            user_id, name, currency, monthly_budget, is_default, created_at, updated_at
           )
-          VALUES (?, '默认', NULL, NULL, NULL, NULL, 1, ?, ?)
+          VALUES (?, '默认', NULL, NULL, 1, ?, ?)
         `,
         )
         .run(userId, now, now);
@@ -348,7 +341,6 @@ export class KeepyService {
     name: string,
     options: {
       currency?: string | null;
-      initialBalance?: number | null;
       makeDefault?: boolean;
       monthlyBudget?: number | null;
     } = {},
@@ -367,18 +359,15 @@ export class KeepyService {
           .prepare(
             `
             INSERT INTO books (
-              user_id, name, currency, initial_balance, current_balance, monthly_budget,
-              is_default, created_at, updated_at
+              user_id, name, currency, monthly_budget, is_default, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
           `,
           )
           .run(
             userId,
             cleanName(name),
             cleanNullableText(options.currency ?? null),
-            options.initialBalance ?? null,
-            options.initialBalance ?? null,
             options.monthlyBudget ?? null,
             options.makeDefault ? 1 : 0,
             now,
@@ -413,16 +402,13 @@ export class KeepyService {
         .prepare(
           `
           UPDATE books
-          SET name = ?, currency = ?, initial_balance = ?, current_balance = ?,
-              monthly_budget = ?, updated_at = ?
+          SET name = ?, currency = ?, monthly_budget = ?, updated_at = ?
           WHERE user_id = ? AND id = ?
         `,
         )
         .run(
           cleanName(input.name),
           cleanNullableText(input.currency),
-          input.initialBalance,
-          input.currentBalance,
           input.monthlyBudget,
           now,
           userId,
@@ -557,9 +543,8 @@ export class KeepyService {
   }
 
   deleteBill(userId: number, billId: number): { bookId: number } {
-    const now = new Date().toISOString();
     const remove = this.db.transaction(() => {
-      return this.deleteBillRecord(userId, billId, now);
+      return this.deleteBillRecord(userId, billId);
     });
 
     const bill = remove();
@@ -672,7 +657,7 @@ export class KeepyService {
         .all(entryId);
 
       for (const link of oldLinks) {
-        this.deleteBillRecord(entry.userId, link.bill_id, now);
+        this.deleteBillRecord(entry.userId, link.bill_id);
       }
 
       const billTime = entry.firstBillAt ?? occurredAt;
@@ -958,14 +943,6 @@ export class KeepyService {
       )
       .run(user.id, book.id, amount, cleanName(purpose), occurredAt.toISOString(), now);
 
-    if (book.currentBalance !== null) {
-      this.db
-        .prepare(
-          "UPDATE books SET current_balance = current_balance - ?, updated_at = ? WHERE id = ?",
-        )
-        .run(amount, now, book.id);
-    }
-
     return Number(result.lastInsertRowid);
   }
 
@@ -976,26 +953,17 @@ export class KeepyService {
     return row ? mapBotEntry(row) : null;
   }
 
-  private deleteBillRecord(userId: number, billId: number, now: string): Bill {
+  private deleteBillRecord(userId: number, billId: number): Bill {
     const bill = this.getBill(billId);
     if (!bill || bill.userId !== userId) {
       throw new BillNotFoundError();
     }
 
-    const book = this.getBook(userId, bill.bookId);
-    if (!book) {
+    if (!this.getBook(userId, bill.bookId)) {
       throw new BookNotFoundError();
     }
 
     this.db.prepare("DELETE FROM bills WHERE user_id = ? AND id = ?").run(userId, billId);
-    if (book.currentBalance !== null) {
-      this.db
-        .prepare(
-          "UPDATE books SET current_balance = current_balance + ?, updated_at = ? WHERE id = ?",
-        )
-        .run(bill.amount, now, book.id);
-    }
-
     return bill;
   }
 }
@@ -1047,9 +1015,7 @@ function mapUser(row: UserRow): User {
 function mapBook(row: BookRow): Book {
   return {
     currency: row.currency,
-    currentBalance: row.current_balance,
     id: row.id,
-    initialBalance: row.initial_balance,
     isDefault: row.is_default === 1,
     monthlyBudget: row.monthly_budget,
     name: row.name,

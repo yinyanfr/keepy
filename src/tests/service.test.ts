@@ -66,8 +66,6 @@ test("records bills and calculates monthly budget remaining", () => {
   });
   const book = service.updateBook(user.id, defaultBook.id, {
     currency: "CNY",
-    currentBalance: null,
-    initialBalance: null,
     monthlyBudget: 100,
     name: "默认",
   });
@@ -321,7 +319,7 @@ test("deduplicates mini app bill submissions by idempotency key", () => {
   service.close();
 });
 
-test("deletes a single bill and restores current balance", () => {
+test("deletes a single bill and updates monthly summary", () => {
   const service = KeepyService.fromPath(":memory:");
   const { user, defaultBook } = service.ensureUser({
     firstName: "Yan",
@@ -332,17 +330,14 @@ test("deletes a single bill and restores current balance", () => {
   });
   const book = service.updateBook(user.id, defaultBook.id, {
     currency: "CNY",
-    currentBalance: 100,
-    initialBalance: 100,
     monthlyBudget: null,
     name: "默认",
   });
   const { bill } = service.recordBillForBook(user, book.id, 6, "吃饭");
 
-  assert.equal(service.getBook(user.id, book.id)?.currentBalance, 94);
+  assert.equal(service.getCurrentMonthSummary(user, book.id).billCount, 1);
   service.deleteBill(user.id, bill.id);
 
-  assert.equal(service.getBook(user.id, book.id)?.currentBalance, 100);
   assert.equal(service.getCurrentMonthSummary(user, book.id).billCount, 0);
   assert.throws(() => service.deleteBill(user.id, bill.id), BillNotFoundError);
 

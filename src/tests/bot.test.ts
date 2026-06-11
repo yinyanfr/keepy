@@ -19,9 +19,7 @@ test("does not record edited messages without an existing bot entry", async () =
   };
   const defaultBook = {
     currency: null,
-    currentBalance: null,
     id: 1,
-    initialBalance: null,
     isDefault: true,
     monthlyBudget: null,
     name: "默认",

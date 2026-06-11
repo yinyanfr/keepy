@@ -112,9 +112,13 @@
       });
       if (!response.ok) throw new Error("Navigation failed");
       const html = await response.text();
-      await put("pages", new URL(url).pathname + new URL(url).search, html);
+      const finalUrl = sameOriginUrl(response.url) ?? url;
+      await cachePageHtml(url, html);
+      if (finalUrl !== url) {
+        await cachePageHtml(finalUrl, html);
+      }
       swapDocument(html);
-      if (options.push) history.pushState({}, "", url);
+      if (options.push) history.pushState({}, "", finalUrl);
       afterPageChange();
       return;
     } catch {
@@ -126,6 +130,17 @@
         afterPageChange();
       }
     }
+  }
+
+  async function cachePageHtml(url, html) {
+    const parsed = new URL(url);
+    await put("pages", parsed.pathname + parsed.search, html);
+  }
+
+  function sameOriginUrl(url) {
+    if (!url) return null;
+    const parsed = new URL(url);
+    return parsed.origin === location.origin ? parsed.href : null;
   }
 
   function swapDocument(html) {

@@ -96,18 +96,6 @@ export function renderSettings(input: { book: Book; bookCount: number; user: Use
             book.monthlyBudget ?? "",
           )}" />
         </label>
-        <label>
-          期初余额
-          <input name="initialBalance" inputmode="decimal" value="${escapeAttribute(
-            book.initialBalance ?? "",
-          )}" />
-        </label>
-        <label>
-          当前余额
-          <input name="currentBalance" inputmode="decimal" value="${escapeAttribute(
-            book.currentBalance ?? "",
-          )}" />
-        </label>
         <div class="button-row">
           <button class="button" type="submit">保存</button>
           <a class="button secondary" href="/books/${book.id}">返回明细</a>

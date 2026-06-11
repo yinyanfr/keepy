@@ -17,9 +17,7 @@ test("formats bot bill confirmation with budget remaining", () => {
     },
     book: {
       currency: "CNY",
-      currentBalance: null,
       id: 1,
-      initialBalance: null,
       isDefault: true,
       monthlyBudget: 100,
       name: "默认",
@@ -54,9 +52,7 @@ test("formats bills command as category summary", () => {
   const text = billsText({
     book: {
       currency: "CNY",
-      currentBalance: null,
       id: 1,
-      initialBalance: null,
       isDefault: true,
       monthlyBudget: null,
       name: "默认",
