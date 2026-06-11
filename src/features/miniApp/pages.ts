@@ -551,7 +551,6 @@ function fabDrawer(book: Book, purposes: string[], idempotencyKey: string): stri
             <input id="${inputId}" name="purpose" class="purpose-input" placeholder="默认" />
           </div>
         </label>
-        <script>purposeSelectLink("${selectId}","${inputId}")</script>
         <button class="button" type="submit">保存</button>
       </form>
     </dialog>

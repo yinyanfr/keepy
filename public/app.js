@@ -182,6 +182,25 @@
         event.preventDefault();
         void submitBillForm(form);
       });
+      bindPurposeCombo(form);
+    });
+  }
+
+  function bindPurposeCombo(form) {
+    const select = form.querySelector(".purpose-select");
+    const input = form.querySelector(".purpose-input");
+    if (!select || !input || select.dataset.purposeLinked === "true") return;
+    select.dataset.purposeLinked = "true";
+    select.addEventListener("change", () => {
+      if (select.value) {
+        input.value = select.value;
+      }
+      input.focus();
+    });
+    input.addEventListener("input", () => {
+      if (input.value !== select.value) {
+        select.value = "";
+      }
     });
   }
 

@@ -132,20 +132,6 @@ function themeToggleScript(): string {
 function miniAppInteractionScript(): string {
   return `<script>
     (() => {
-      window.purposeSelectLink = (selectId, inputId) => {
-        const select = document.getElementById(selectId);
-        const input = document.getElementById(inputId);
-        if (!select || !input) return;
-        if (select.dataset.purposeLinked === "true") return;
-        select.dataset.purposeLinked = "true";
-        select.addEventListener("change", () => {
-          if (select.value) {
-            input.value = select.value;
-          }
-          input.focus();
-        });
-      };
-
       document.addEventListener("click", (event) => {
         const openTarget = event.target.closest("[data-dialog-open]");
         if (openTarget) {
