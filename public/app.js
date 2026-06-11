@@ -559,6 +559,15 @@
     document.querySelectorAll("form[action='/auth/logout'] button").forEach((button) => {
       button.disabled = offline;
     });
+    document.querySelectorAll("[data-online-only]").forEach((control) => {
+      if (
+        control instanceof HTMLButtonElement ||
+        control instanceof HTMLInputElement ||
+        control instanceof HTMLSelectElement
+      ) {
+        control.disabled = offline;
+      }
+    });
   }
 
   function routeInfo() {

@@ -2,8 +2,9 @@ import { escapeAttribute, escapeHtml, page } from "../lib/html.js";
 import type { User } from "../services/keepyService.js";
 
 export function appShell(input: {
-  active: "books" | "history" | "home" | "settings";
+  active: "books" | "history" | "home" | "settings" | "user";
   body: string;
+  isTelegramMiniApp?: boolean;
   title: string;
   user: User;
 }): string {
@@ -15,25 +16,17 @@ export function appShell(input: {
     input.title,
     `
     ${themeBootScript()}
-    <main class="app" data-time-zone="${escapeAttribute(input.user.timezone)}">
+    <main class="app" data-time-zone="${escapeAttribute(input.user.timezone)}" data-client-source="${input.isTelegramMiniApp ? "telegram" : "web"}">
       <header class="topbar">
         <a class="brand" href="/">Keepy</a>
         <div class="topbar-actions">
-          <details class="account-menu">
-            <summary class="profile" aria-label="账户">
-              ${avatar(input.user)}
-              <span class="profile-text">
-                <span class="profile-name">${escapeHtml(displayName)}</span>
-                ${username ? `<span class="profile-handle">${escapeHtml(username)}</span>` : ""}
-              </span>
-            </summary>
-            <nav class="account-panel">
-              <button type="button" data-refresh-avatar>刷新头像</button>
-              <form method="post" action="/auth/logout">
-                <button type="submit">退出登录</button>
-              </form>
-            </nav>
-          </details>
+          <a class="profile" href="/user/settings" aria-label="用户设置">
+            ${avatar(input.user)}
+            <span class="profile-text">
+              <span class="profile-name">${escapeHtml(displayName)}</span>
+              ${username ? `<span class="profile-handle">${escapeHtml(username)}</span>` : ""}
+            </span>
+          </a>
           <label class="theme-switch" aria-label="昼夜模式">
             <input type="checkbox" data-theme-switch aria-label="昼夜模式" />
             <span class="theme-track" aria-hidden="true">
@@ -162,13 +155,19 @@ function miniAppInteractionScript(): string {
 
         const refreshAvatar = event.target.closest("[data-refresh-avatar]");
         if (refreshAvatar) {
-          const avatar = document.querySelector("[data-avatar-img]");
-          const fallback = document.querySelector("[data-avatar-fallback]");
-          if (avatar instanceof HTMLImageElement) {
-            refreshAvatar.setAttribute("aria-busy", "true");
-            avatar.hidden = false;
-            if (fallback instanceof HTMLElement) fallback.hidden = true;
-            avatar.src = "/auth/avatar?refresh=" + Date.now();
+          refreshAvatar.setAttribute("aria-busy", "true");
+          const nextSrc = "/auth/avatar?refresh=" + Date.now();
+          const avatars = document.querySelectorAll("[data-avatar-img]");
+          if (avatars.length === 0) {
+            refreshAvatar.removeAttribute("aria-busy");
+          }
+          for (const avatar of avatars) {
+            if (avatar instanceof HTMLImageElement) {
+              const fallback = avatar.closest(".avatar-stack")?.querySelector("[data-avatar-fallback]");
+              avatar.hidden = false;
+              if (fallback instanceof HTMLElement) fallback.hidden = true;
+              avatar.src = nextSrc;
+            }
           }
         }
 
@@ -189,23 +188,26 @@ function miniAppInteractionScript(): string {
       });
 
       window.KeepyHydrateMini = () => {
-        const avatar = document.querySelector("[data-avatar-img]");
-        if (avatar instanceof HTMLImageElement && avatar.dataset.keepyAvatarBound !== "true") {
-          avatar.dataset.keepyAvatarBound = "true";
-          avatar.addEventListener("load", () => {
-            const fallback = document.querySelector("[data-avatar-fallback]");
-            avatar.hidden = false;
-            if (fallback instanceof HTMLElement) fallback.hidden = true;
-            const refreshAvatar = document.querySelector("[data-refresh-avatar]");
-            refreshAvatar?.removeAttribute("aria-busy");
-          });
-          avatar.addEventListener("error", () => {
-            const fallback = document.querySelector("[data-avatar-fallback]");
-            avatar.hidden = true;
-            if (fallback instanceof HTMLElement) fallback.hidden = false;
-            const refreshAvatar = document.querySelector("[data-refresh-avatar]");
-            refreshAvatar?.removeAttribute("aria-busy");
-          });
+        for (const avatar of document.querySelectorAll("[data-avatar-img]")) {
+          if (avatar instanceof HTMLImageElement && avatar.dataset.keepyAvatarBound !== "true") {
+            avatar.dataset.keepyAvatarBound = "true";
+            avatar.addEventListener("load", () => {
+              const fallback = avatar.closest(".avatar-stack")?.querySelector("[data-avatar-fallback]");
+              avatar.hidden = false;
+              if (fallback instanceof HTMLElement) fallback.hidden = true;
+              document.querySelectorAll("[data-refresh-avatar]").forEach((refreshAvatar) => {
+                refreshAvatar.removeAttribute("aria-busy");
+              });
+            });
+            avatar.addEventListener("error", () => {
+              const fallback = avatar.closest(".avatar-stack")?.querySelector("[data-avatar-fallback]");
+              avatar.hidden = true;
+              if (fallback instanceof HTMLElement) fallback.hidden = false;
+              document.querySelectorAll("[data-refresh-avatar]").forEach((refreshAvatar) => {
+                refreshAvatar.removeAttribute("aria-busy");
+              });
+            });
+          }
         }
 
         for (const dialog of document.querySelectorAll("dialog")) {
@@ -329,6 +331,11 @@ export function style(): string {
       cursor: not-allowed;
     }
 
+    html[data-offline="true"] [data-online-only] {
+      cursor: not-allowed;
+      opacity: 0.62;
+    }
+
     .app {
       width: min(100%, 760px);
       min-height: 100vh;
@@ -357,11 +364,6 @@ export function style(): string {
       min-width: 0;
     }
 
-    .account-menu {
-      position: relative;
-      min-width: 0;
-    }
-
     .profile {
       display: flex;
       align-items: center;
@@ -372,10 +374,6 @@ export function style(): string {
       color: var(--ink);
       cursor: pointer;
       list-style: none;
-    }
-
-    .profile::-webkit-details-marker {
-      display: none;
     }
 
     .profile:hover {
@@ -432,38 +430,37 @@ export function style(): string {
       display: none;
     }
 
-    .account-panel {
-      position: absolute;
-      top: 44px;
-      right: 0;
-      z-index: 2;
-      width: 132px;
-      padding: 8px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: var(--panel);
-      box-shadow: var(--shadow);
+    .large-avatar,
+    .large-avatar img,
+    .large-avatar .avatar-fallback {
+      width: 64px;
+      height: 64px;
+      font-size: 24px;
     }
 
-    .account-panel button {
-      width: 100%;
-      display: block;
-      padding: 10px 12px;
-      border: 0;
-      border-radius: 6px;
-      background: transparent;
-      color: var(--ink);
-      text-align: left;
-      cursor: pointer;
+    .user-settings-panel {
+      display: grid;
+      gap: 14px;
     }
 
-    .account-panel form {
-      margin: 0;
+    .user-settings-profile {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      min-width: 0;
     }
 
-    .account-panel button:hover {
-      background: var(--hover);
-      color: var(--green-strong);
+    .user-settings-profile > div {
+      display: grid;
+      gap: 2px;
+      min-width: 0;
+    }
+
+    .user-settings-profile strong,
+    .user-settings-profile span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     .theme-switch {

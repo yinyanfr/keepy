@@ -2,6 +2,7 @@ import { appShell, loginPage } from "../../components/layout.js";
 import { formatMonthDay, formatTime } from "../../lib/dates.js";
 import { escapeAttribute, escapeHtml } from "../../lib/html.js";
 import { currencySymbol, formatAmount } from "../../lib/money.js";
+import { commonTimeZones, timeZoneLabel } from "../../lib/timezones.js";
 import type { AppConfig } from "../../configs/env.js";
 import type {
   Bill,
@@ -25,17 +26,27 @@ export function renderHome(input: {
   billSubmissionKey: string;
   bills: PaginatedBills;
   book: Book;
+  isTelegramMiniApp?: boolean;
   purposes: string[];
   summary: MonthSummary;
   user: User;
 }): string {
-  const { billSubmissionKey, bills, book, purposes, summary, user } = input;
+  const {
+    billSubmissionKey,
+    bills,
+    book,
+    isTelegramMiniApp = false,
+    purposes,
+    summary,
+    user,
+  } = input;
   const bookUrl = `/books/${book.id}`;
   const settingsUrl = `${bookUrl}/settings`;
   const historyUrl = `/history?bookId=${book.id}&month=${encodeURIComponent(summary.monthKey)}`;
 
   return appShell({
     active: "home",
+    isTelegramMiniApp,
     title: "Keepy 本月明细",
     user,
     body: `
@@ -61,8 +72,13 @@ export function renderHome(input: {
   });
 }
 
-export function renderSettings(input: { book: Book; bookCount: number; user: User }): string {
-  const { book, bookCount, user } = input;
+export function renderSettings(input: {
+  book: Book;
+  bookCount: number;
+  isTelegramMiniApp?: boolean;
+  user: User;
+}): string {
+  const { book, bookCount, isTelegramMiniApp = false, user } = input;
   const deleteDisabled = book.isDefault || bookCount <= 1;
   const deleteHint = book.isDefault
     ? "默认账本不能删除。"
@@ -72,6 +88,7 @@ export function renderSettings(input: { book: Book; bookCount: number; user: Use
 
   return appShell({
     active: "settings",
+    isTelegramMiniApp,
     title: "Keepy 账本设置",
     user,
     body: `
@@ -129,12 +146,17 @@ export function renderSettings(input: { book: Book; bookCount: number; user: Use
   });
 }
 
-export function renderBooks(input: { books: BookListItem[]; user: User }): string {
-  const { books, user } = input;
+export function renderBooks(input: {
+  books: BookListItem[];
+  isTelegramMiniApp?: boolean;
+  user: User;
+}): string {
+  const { books, isTelegramMiniApp = false, user } = input;
   const defaultBook = books.find(({ book }) => book.isDefault)?.book ?? books[0]?.book;
 
   return appShell({
     active: "books",
+    isTelegramMiniApp,
     title: "Keepy 账本列表",
     user,
     body: `
@@ -216,14 +238,16 @@ export function renderBooks(input: { books: BookListItem[]; user: User }): strin
 export function renderHistory(input: {
   book: Book;
   categories: SpendingCategory[];
+  isTelegramMiniApp?: boolean;
   monthKey: string;
   summary: MonthSummary;
   user: User;
 }): string {
-  const { book, categories, monthKey, summary, user } = input;
+  const { book, categories, isTelegramMiniApp = false, monthKey, summary, user } = input;
 
   return appShell({
     active: "history",
+    isTelegramMiniApp,
     title: "Keepy 历史记录",
     user,
     body: `
@@ -243,6 +267,66 @@ export function renderHistory(input: {
               user.timezone,
               historyUrl(book.id, ...monthParts(summary.monthKey)),
             )
+      }
+    `,
+  });
+}
+
+export function renderUserSettings(input: { isTelegramMiniApp: boolean; user: User }): string {
+  const { isTelegramMiniApp, user } = input;
+  const fullName = [user.firstName, user.lastName].filter(Boolean).join(" ");
+  const displayName = fullName || (user.username ? `@${user.username}` : "Keepy");
+  const username = user.username ? `@${user.username}` : "";
+  const fallback = (user.firstName?.[0] ?? user.username?.[0] ?? "K").toUpperCase();
+
+  return appShell({
+    active: "user",
+    isTelegramMiniApp,
+    title: "Keepy 用户设置",
+    user,
+    body: `
+      <section class="section-title">
+        <h1>用户设置</h1>
+      </section>
+      <section class="form-panel user-settings-panel">
+        <div class="user-settings-profile">
+          <span class="avatar-stack large-avatar">
+            <img src="/auth/avatar" alt="" data-avatar-img />
+            <span class="avatar-fallback" data-avatar-fallback hidden>${escapeHtml(fallback)}</span>
+          </span>
+          <div>
+            <strong>${escapeHtml(displayName)}</strong>
+            ${username ? `<span class="muted">${escapeHtml(username)}</span>` : ""}
+          </div>
+        </div>
+        <button class="button secondary" type="button" data-refresh-avatar data-online-only>刷新头像</button>
+      </section>
+      <form class="form-panel" method="post" action="/user/settings">
+        <label>
+          时区
+          <select name="timezone" required>
+            ${commonTimeZones
+              .map(
+                (option) =>
+                  `<option value="${escapeAttribute(option.value)}" ${
+                    option.value === user.timezone ? "selected" : ""
+                  }>${escapeHtml(option.label)}</option>`,
+              )
+              .join("")}
+          </select>
+        </label>
+        <p class="muted">当前：${escapeHtml(timeZoneLabel(user.timezone))}</p>
+        <button class="button" type="submit">保存</button>
+      </form>
+      ${
+        isTelegramMiniApp
+          ? ""
+          : `<section class="danger-zone">
+              <h2>退出登录</h2>
+              <form method="post" action="/auth/logout">
+                <button class="button danger" type="submit">退出登录</button>
+              </form>
+            </section>`
       }
     `,
   });

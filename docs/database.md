@@ -44,7 +44,7 @@ Constraints:
 Behavior:
 
 - on repeat login or `/start`, profile fields are refreshed from Telegram
-- timezone is currently fixed at user creation time and not exposed in UI
+- timezone defaults to `Asia/Shanghai` and can be changed from user settings
 
 ### `books`
 
@@ -140,7 +140,8 @@ For a given user, book, and month range:
 - `netBalance`: `incomeTotal - expenseTotal`
 - `budgetRemaining`: `monthly_budget - expenseTotal`, or `NULL`
 
-Month boundaries are timezone-aware and derived from the user's timezone.
+Month boundaries are timezone-aware and derived from the user's timezone. Bill timestamps remain
+stored as absolute ISO/UTC values; the timezone only affects display, grouping, and bot replies.
 
 ## Operational Notes
 

@@ -80,6 +80,9 @@ Success:
 - Status: `302 Found`
 - Redirect: `/`
 
+Telegram Mini App logins also set an internal client-source cookie so SSR can hide browser-only
+actions such as logout inside Telegram.
+
 ## HTML Pages
 
 ### GET `/`
@@ -136,6 +139,40 @@ Unauthenticated:
 
 - Status: `302 Found`
 - Redirect: `/`
+
+### GET `/user/settings`
+
+Returns the user settings page with the current profile, avatar controls, and a common-timezone
+selector.
+
+Success:
+
+- Status: `200 OK`
+- Returns HTML
+
+Unauthenticated:
+
+- Status: `302 Found`
+- Redirect: `/`
+
+### POST `/user/settings`
+
+Updates the current user's display timezone.
+
+Form fields:
+
+- `timezone`: one of Keepy's common IANA timezone options, such as `Asia/Shanghai`,
+  `Asia/Tokyo`, `Europe/Paris`, or `America/Los_Angeles`
+
+Success:
+
+- Status: `302 Found`
+- Redirect: `/user/settings`
+
+Validation failure:
+
+- Status: `400 Bad Request`
+- Body: `时区无效。`
 
 ### GET `/books`
 

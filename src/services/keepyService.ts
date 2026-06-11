@@ -1,6 +1,7 @@
 import type { TelegramAuthUser } from "../lib/telegramAuth.js";
 import { getMonthRange, monthRangeFromKey, type MonthRange } from "../lib/dates.js";
 import type { LedgerParseSuccess } from "../lib/money.js";
+import { defaultTimeZone, isCommonTimeZone } from "../lib/timezones.js";
 import { openDatabase, type SqliteDatabase } from "./database.js";
 
 export interface User {
@@ -181,6 +182,13 @@ export class InvalidBillAmountError extends Error {
   }
 }
 
+export class InvalidTimeZoneError extends Error {
+  constructor(message = "Unsupported timezone.") {
+    super(message);
+    this.name = "InvalidTimeZoneError";
+  }
+}
+
 export class KeepyService {
   constructor(private readonly db: SqliteDatabase) {}
 
@@ -234,7 +242,7 @@ export class KeepyService {
           INSERT INTO users (
             telegram_id, username, first_name, last_name, photo_url, timezone, created_at, updated_at
           )
-          VALUES (?, ?, ?, ?, ?, 'Asia/Shanghai', ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `,
         )
         .run(
@@ -243,6 +251,7 @@ export class KeepyService {
           profile.firstName,
           profile.lastName,
           profile.photoUrl,
+          defaultTimeZone,
           now,
           now,
         );
@@ -285,6 +294,27 @@ export class KeepyService {
   getUser(userId: number): User | null {
     const row = this.db.prepare<[number], UserRow>("SELECT * FROM users WHERE id = ?").get(userId);
     return row ? mapUser(row) : null;
+  }
+
+  updateUserTimezone(userId: number, timezone: string): User {
+    if (!isCommonTimeZone(timezone)) {
+      throw new InvalidTimeZoneError();
+    }
+
+    const now = new Date().toISOString();
+    const result = this.db
+      .prepare("UPDATE users SET timezone = ?, updated_at = ? WHERE id = ?")
+      .run(timezone, now, userId);
+    if (result.changes === 0) {
+      throw new Error("User not found.");
+    }
+
+    const user = this.getUser(userId);
+    if (!user) {
+      throw new Error("Failed to reload updated user.");
+    }
+
+    return user;
   }
 
   listBooks(userId: number): Book[] {

@@ -9,6 +9,7 @@ import {
   BookDeleteError,
   BookNotFoundError,
   InvalidBillAmountError,
+  InvalidTimeZoneError,
   KeepyService,
 } from "../services/keepyService.js";
 
@@ -26,7 +27,27 @@ test("creates a user with one default book", () => {
   assert.equal(result.created, true);
   assert.equal(result.defaultBook.name, "默认");
   assert.equal(result.defaultBook.isDefault, true);
+  assert.equal(result.user.timezone, "Asia/Shanghai");
   assert.equal(service.listBooks(result.user.id).length, 1);
+
+  service.close();
+});
+
+test("updates user timezone with the common timezone allowlist", () => {
+  const service = KeepyService.fromPath(":memory:");
+  const { user } = service.ensureUser({
+    firstName: "Yan",
+    lastName: null,
+    photoUrl: null,
+    telegramId: 1018,
+    username: "yan",
+  });
+
+  const updated = service.updateUserTimezone(user.id, "America/Los_Angeles");
+
+  assert.equal(updated.timezone, "America/Los_Angeles");
+  assert.equal(service.getUser(user.id)?.timezone, "America/Los_Angeles");
+  assert.throws(() => service.updateUserTimezone(user.id, "Mars/Olympus"), InvalidTimeZoneError);
 
   service.close();
 });

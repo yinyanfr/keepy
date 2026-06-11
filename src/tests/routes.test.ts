@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import express from "express";
 import test from "node:test";
 
+import { clientSourceCookieName, type ClientSource } from "../lib/clientSource.js";
 import { createSessionValue, sessionCookieName } from "../lib/session.js";
 import { createMiniAppRouter } from "../routes/miniApp.js";
 import {
@@ -9,6 +10,7 @@ import {
   BookConflictError,
   BookDeleteError,
   BookNotFoundError,
+  InvalidTimeZoneError,
   type Book,
   type KeepyService,
   type User,
@@ -322,11 +324,66 @@ test("shows book monthly metrics on the book list", async () => {
   assert.match(response.text, /¥58/);
 });
 
-function buildTestApp(overrides: Partial<KeepyService>): express.Express {
+test("renders user settings with timezone selector instead of an account dropdown", async () => {
+  const app = buildTestApp();
+
+  const response = await get(app, "/user/settings");
+
+  assert.equal(response.status, 200);
+  assert.match(response.text, /用户设置/);
+  assert.match(response.text, /name="timezone"/);
+  assert.match(response.text, /Asia\/Shanghai/);
+  assert.match(response.text, /退出登录/);
+  assert.doesNotMatch(response.text, /account-panel/);
+});
+
+test("updates user timezone from the user settings page", async () => {
+  let receivedTimezone: string | null = null;
+  const app = buildTestApp({
+    updateUserTimezone: (_userId, timezone) => {
+      receivedTimezone = timezone;
+      return { ...user, timezone };
+    },
+  });
+
+  const response = await post(app, "/user/settings", "timezone=America%2FLos_Angeles", "manual");
+
+  assert.equal(response.status, 302);
+  assert.equal(response.location, "/user/settings");
+  assert.equal(receivedTimezone, "America/Los_Angeles");
+});
+
+test("rejects invalid user timezone values", async () => {
+  const app = buildTestApp({
+    updateUserTimezone: () => {
+      throw new InvalidTimeZoneError();
+    },
+  });
+
+  const response = await post(app, "/user/settings", "timezone=Mars%2FOlympus", "manual");
+
+  assert.equal(response.status, 400);
+  assert.match(response.text, /时区无效/);
+});
+
+test("hides logout on user settings inside Telegram mini app", async () => {
+  const app = buildTestApp({}, "telegram");
+
+  const response = await get(app, "/user/settings");
+
+  assert.equal(response.status, 200);
+  assert.doesNotMatch(response.text, /action="\/auth\/logout"/);
+});
+
+function buildTestApp(
+  overrides: Partial<KeepyService> = {},
+  clientSource: ClientSource = "web",
+): express.Express {
   const app = express();
   app.use(express.urlencoded({ extended: false }));
   app.use((req, _res, next) => {
     req.cookies = {
+      [clientSourceCookieName]: clientSource,
       [sessionCookieName]: createSessionValue(user.telegramId, config.sessionSecret),
     };
     next();
@@ -380,6 +437,7 @@ function buildTestApp(overrides: Partial<KeepyService>): express.Express {
     }),
     setDefaultBook: () => defaultBook,
     updateBook: () => defaultBook,
+    updateUserTimezone: () => user,
     ...overrides,
   } as unknown as KeepyService;
 
