@@ -8,6 +8,8 @@ import {
   BookConflictError,
   BookDeleteError,
   BookNotFoundError,
+  InvalidBillAmountError,
+  InvalidTimeZoneError,
   KeepyService,
 } from "../services/keepyService.js";
 
@@ -25,7 +27,27 @@ test("creates a user with one default book", () => {
   assert.equal(result.created, true);
   assert.equal(result.defaultBook.name, "默认");
   assert.equal(result.defaultBook.isDefault, true);
+  assert.equal(result.user.timezone, "Asia/Shanghai");
   assert.equal(service.listBooks(result.user.id).length, 1);
+
+  service.close();
+});
+
+test("updates user timezone with the common timezone allowlist", () => {
+  const service = KeepyService.fromPath(":memory:");
+  const { user } = service.ensureUser({
+    firstName: "Yan",
+    lastName: null,
+    photoUrl: null,
+    telegramId: 1018,
+    username: "yan",
+  });
+
+  const updated = service.updateUserTimezone(user.id, "America/Los_Angeles");
+
+  assert.equal(updated.timezone, "America/Los_Angeles");
+  assert.equal(service.getUser(user.id)?.timezone, "America/Los_Angeles");
+  assert.throws(() => service.updateUserTimezone(user.id, "Mars/Olympus"), InvalidTimeZoneError);
 
   service.close();
 });
@@ -65,8 +87,6 @@ test("records bills and calculates monthly budget remaining", () => {
   });
   const book = service.updateBook(user.id, defaultBook.id, {
     currency: "CNY",
-    currentBalance: null,
-    initialBalance: null,
     monthlyBudget: 100,
     name: "默认",
   });
@@ -91,6 +111,25 @@ test("records bills and calculates monthly budget remaining", () => {
   assert.equal(summary.incomeTotal, 20);
   assert.equal(summary.netBalance, 8);
   assert.equal(summary.budgetRemaining, 88);
+
+  service.close();
+});
+
+test("rejects zero-amount ledger messages and direct bill inserts", () => {
+  const service = KeepyService.fromPath(":memory:");
+  const { user, defaultBook } = service.ensureUser({
+    firstName: "Yan",
+    lastName: null,
+    photoUrl: null,
+    telegramId: 10021,
+    username: "yan",
+  });
+
+  assert.deepEqual(parseLedgerMessage("0 午饭", ["默认"]), { error: "金额不能为 0。" });
+  assert.throws(
+    () => service.recordBillForBook(user, defaultBook.id, 0, "午饭"),
+    InvalidBillAmountError,
+  );
 
   service.close();
 });
@@ -301,7 +340,7 @@ test("deduplicates mini app bill submissions by idempotency key", () => {
   service.close();
 });
 
-test("deletes a single bill and restores current balance", () => {
+test("deletes a single bill and updates monthly summary", () => {
   const service = KeepyService.fromPath(":memory:");
   const { user, defaultBook } = service.ensureUser({
     firstName: "Yan",
@@ -312,17 +351,14 @@ test("deletes a single bill and restores current balance", () => {
   });
   const book = service.updateBook(user.id, defaultBook.id, {
     currency: "CNY",
-    currentBalance: 100,
-    initialBalance: 100,
     monthlyBudget: null,
     name: "默认",
   });
   const { bill } = service.recordBillForBook(user, book.id, 6, "吃饭");
 
-  assert.equal(service.getBook(user.id, book.id)?.currentBalance, 94);
+  assert.equal(service.getCurrentMonthSummary(user, book.id).billCount, 1);
   service.deleteBill(user.id, bill.id);
 
-  assert.equal(service.getBook(user.id, book.id)?.currentBalance, 100);
   assert.equal(service.getCurrentMonthSummary(user, book.id).billCount, 0);
   assert.throws(() => service.deleteBill(user.id, bill.id), BillNotFoundError);
 

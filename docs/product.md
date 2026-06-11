@@ -10,7 +10,7 @@ On first successful login or `/start`, Keepy:
 
 - creates a user row
 - stores Telegram profile fields when available
-- sets timezone to `Asia/Shanghai`
+- sets timezone to `Asia/Shanghai` by default
 - creates one default book named `默认`
 
 ### Book
@@ -114,7 +114,7 @@ Cookie properties:
 
 ## Current Limitations
 
-- timezone is fixed to `Asia/Shanghai` at user creation time
+- timezone is configurable from the user settings page and affects display plus bot replies only
 - there is no bill editing or deletion UI
 - there is no pagination for history pages
 - there is no separate API surface for the Mini App

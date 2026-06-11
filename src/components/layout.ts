@@ -2,8 +2,9 @@ import { escapeAttribute, escapeHtml, page } from "../lib/html.js";
 import type { User } from "../services/keepyService.js";
 
 export function appShell(input: {
-  active: "books" | "history" | "home" | "settings";
+  active: "books" | "history" | "home" | "settings" | "user";
   body: string;
+  isTelegramMiniApp?: boolean;
   title: string;
   user: User;
 }): string {
@@ -15,25 +16,17 @@ export function appShell(input: {
     input.title,
     `
     ${themeBootScript()}
-    <main class="app">
+    <main class="app" data-time-zone="${escapeAttribute(input.user.timezone)}" data-client-source="${input.isTelegramMiniApp ? "telegram" : "web"}">
       <header class="topbar">
         <a class="brand" href="/">Keepy</a>
         <div class="topbar-actions">
-          <details class="account-menu">
-            <summary class="profile" aria-label="账户">
-              ${avatar(input.user)}
-              <span class="profile-text">
-                <span class="profile-name">${escapeHtml(displayName)}</span>
-                ${username ? `<span class="profile-handle">${escapeHtml(username)}</span>` : ""}
-              </span>
-            </summary>
-            <nav class="account-panel">
-              <button type="button" data-refresh-avatar>刷新头像</button>
-              <form method="post" action="/auth/logout">
-                <button type="submit">退出登录</button>
-              </form>
-            </nav>
-          </details>
+          <a class="profile" href="/user/settings" aria-label="用户设置">
+            ${avatar(input.user)}
+            <span class="profile-text">
+              <span class="profile-name">${escapeHtml(displayName)}</span>
+              ${username ? `<span class="profile-handle">${escapeHtml(username)}</span>` : ""}
+            </span>
+          </a>
           <label class="theme-switch" aria-label="昼夜模式">
             <input type="checkbox" data-theme-switch aria-label="昼夜模式" />
             <span class="theme-track" aria-hidden="true">
@@ -96,9 +89,8 @@ export function loginPage(botUsername: string): string {
 
 function avatar(user: User): string {
   const fallback = (user.firstName?.[0] ?? user.username?.[0] ?? "K").toUpperCase();
-  const source = user.photoUrl ?? "/auth/avatar";
   return `<span class="avatar-stack">
-    <img src="${escapeAttribute(source)}" alt="" data-avatar-img />
+    <img src="/auth/avatar" alt="" data-avatar-img />
     <span class="avatar-fallback" data-avatar-fallback hidden>${escapeHtml(fallback)}</span>
   </span>`;
 }
@@ -117,15 +109,22 @@ function themeBootScript(): string {
 function themeToggleScript(): string {
   return `<script>
     (() => {
-      const input = document.querySelector("[data-theme-switch]");
-      if (!input) return;
       const apply = (theme) => {
         document.documentElement.dataset.theme = theme;
         localStorage.setItem("keepy-theme", theme);
-        input.checked = theme === "dark";
+        document.querySelectorAll("[data-theme-switch]").forEach((input) => {
+          if (input instanceof HTMLInputElement) input.checked = theme === "dark";
+        });
       };
-      input.checked = document.documentElement.dataset.theme === "dark";
-      input.addEventListener("change", () => apply(input.checked ? "dark" : "light"));
+      window.KeepyHydrateTheme = () => {
+        const input = document.querySelector("[data-theme-switch]");
+        if (!(input instanceof HTMLInputElement)) return;
+        input.checked = document.documentElement.dataset.theme === "dark";
+        if (input.dataset.keepyThemeBound === "true") return;
+        input.dataset.keepyThemeBound = "true";
+        input.addEventListener("change", () => apply(input.checked ? "dark" : "light"));
+      };
+      window.KeepyHydrateTheme();
     })();
   </script>`;
 }
@@ -156,13 +155,19 @@ function miniAppInteractionScript(): string {
 
         const refreshAvatar = event.target.closest("[data-refresh-avatar]");
         if (refreshAvatar) {
-          const avatar = document.querySelector("[data-avatar-img]");
-          const fallback = document.querySelector("[data-avatar-fallback]");
-          if (avatar instanceof HTMLImageElement) {
-            refreshAvatar.setAttribute("aria-busy", "true");
-            avatar.hidden = false;
-            if (fallback instanceof HTMLElement) fallback.hidden = true;
-            avatar.src = "/auth/avatar?refresh=" + Date.now();
+          refreshAvatar.setAttribute("aria-busy", "true");
+          const nextSrc = "/auth/avatar?refresh=" + Date.now();
+          const avatars = document.querySelectorAll("[data-avatar-img]");
+          if (avatars.length === 0) {
+            refreshAvatar.removeAttribute("aria-busy");
+          }
+          for (const avatar of avatars) {
+            if (avatar instanceof HTMLImageElement) {
+              const fallback = avatar.closest(".avatar-stack")?.querySelector("[data-avatar-fallback]");
+              avatar.hidden = false;
+              if (fallback instanceof HTMLElement) fallback.hidden = true;
+              avatar.src = nextSrc;
+            }
           }
         }
 
@@ -182,26 +187,57 @@ function miniAppInteractionScript(): string {
         }
       });
 
-      const avatar = document.querySelector("[data-avatar-img]");
-      if (avatar instanceof HTMLImageElement) {
-        avatar.addEventListener("load", () => {
-          const refreshAvatar = document.querySelector("[data-refresh-avatar]");
-          refreshAvatar?.removeAttribute("aria-busy");
-        });
-        avatar.addEventListener("error", () => {
-          const fallback = document.querySelector("[data-avatar-fallback]");
-          avatar.hidden = true;
-          if (fallback instanceof HTMLElement) fallback.hidden = false;
-          const refreshAvatar = document.querySelector("[data-refresh-avatar]");
-          refreshAvatar?.removeAttribute("aria-busy");
-        });
-      }
+      window.KeepyHydrateMini = () => {
+        for (const avatar of document.querySelectorAll("[data-avatar-img]")) {
+          if (avatar instanceof HTMLImageElement && avatar.dataset.keepyAvatarBound !== "true") {
+            avatar.dataset.keepyAvatarBound = "true";
+            avatar.addEventListener("load", () => {
+              const fallback = avatar.closest(".avatar-stack")?.querySelector("[data-avatar-fallback]");
+              avatar.hidden = false;
+              if (fallback instanceof HTMLElement) fallback.hidden = true;
+              document.querySelectorAll("[data-refresh-avatar]").forEach((refreshAvatar) => {
+                refreshAvatar.removeAttribute("aria-busy");
+              });
+            });
+            avatar.addEventListener("error", () => {
+              const fallback = avatar.closest(".avatar-stack")?.querySelector("[data-avatar-fallback]");
+              avatar.hidden = true;
+              if (fallback instanceof HTMLElement) fallback.hidden = false;
+              document.querySelectorAll("[data-refresh-avatar]").forEach((refreshAvatar) => {
+                refreshAvatar.removeAttribute("aria-busy");
+              });
+            });
+          }
+        }
 
-      for (const dialog of document.querySelectorAll("dialog")) {
-        dialog.addEventListener("click", (event) => {
-          if (event.target === dialog) dialog.close();
+        for (const dialog of document.querySelectorAll("dialog")) {
+          if (dialog.dataset.keepyDialogBound === "true") continue;
+          dialog.dataset.keepyDialogBound = "true";
+          dialog.addEventListener("click", (event) => {
+            if (event.target === dialog) dialog.close();
+          });
+        }
+
+        const focus = document.querySelector("[data-pie-focus]");
+        const showSlice = (element) => {
+          if (!element || !focus) return;
+          document.querySelectorAll("[data-pie-slice], [data-pie-legend]").forEach((item) => {
+            item.classList.remove("active");
+          });
+          element.classList.add("active");
+          const label = element.dataset.label;
+          const value = element.dataset.value;
+          const percent = element.dataset.percent;
+          focus.textContent = label + " · " + value + " · " + percent;
+        };
+
+        document.querySelectorAll("[data-pie-slice], [data-pie-legend]").forEach((element) => {
+          if (element.dataset.keepyPieBound === "true") return;
+          element.dataset.keepyPieBound = "true";
+          element.addEventListener("click", () => showSlice(element));
+          element.addEventListener("focus", () => showSlice(element));
         });
-      }
+      };
 
       document.addEventListener("submit", (event) => {
         const form = event.target;
@@ -225,23 +261,7 @@ function miniAppInteractionScript(): string {
         });
       });
 
-      const focus = document.querySelector("[data-pie-focus]");
-      const showSlice = (element) => {
-        if (!element || !focus) return;
-        document.querySelectorAll("[data-pie-slice], [data-pie-legend]").forEach((item) => {
-          item.classList.remove("active");
-        });
-        element.classList.add("active");
-        const label = element.dataset.label;
-        const value = element.dataset.value;
-        const percent = element.dataset.percent;
-        focus.textContent = label + " · " + value + " · " + percent;
-      };
-
-      document.querySelectorAll("[data-pie-slice], [data-pie-legend]").forEach((element) => {
-        element.addEventListener("click", () => showSlice(element));
-        element.addEventListener("focus", () => showSlice(element));
-      });
+      window.KeepyHydrateMini();
     })();
   </script>`;
 }
@@ -301,6 +321,21 @@ export function style(): string {
       opacity: 0.62;
     }
 
+    html[data-offline="true"] form:not([data-bill-form]) {
+      opacity: 0.62;
+    }
+
+    html[data-offline="true"] form:not([data-bill-form]) button,
+    html[data-offline="true"] form:not([data-bill-form]) input,
+    html[data-offline="true"] form:not([data-bill-form]) select {
+      cursor: not-allowed;
+    }
+
+    html[data-offline="true"] [data-online-only] {
+      cursor: not-allowed;
+      opacity: 0.62;
+    }
+
     .app {
       width: min(100%, 760px);
       min-height: 100vh;
@@ -329,11 +364,6 @@ export function style(): string {
       min-width: 0;
     }
 
-    .account-menu {
-      position: relative;
-      min-width: 0;
-    }
-
     .profile {
       display: flex;
       align-items: center;
@@ -344,10 +374,6 @@ export function style(): string {
       color: var(--ink);
       cursor: pointer;
       list-style: none;
-    }
-
-    .profile::-webkit-details-marker {
-      display: none;
     }
 
     .profile:hover {
@@ -380,12 +406,15 @@ export function style(): string {
 
     .avatar-stack {
       position: relative;
+      display: block;
       width: 32px;
       height: 32px;
       flex: 0 0 auto;
     }
 
     .avatar-stack img, .avatar-fallback {
+      position: absolute;
+      inset: 0;
       width: 32px;
       height: 32px;
       border-radius: 50%;
@@ -397,38 +426,41 @@ export function style(): string {
       object-fit: cover;
     }
 
-    .account-panel {
-      position: absolute;
-      top: 44px;
-      right: 0;
-      z-index: 2;
-      width: 132px;
-      padding: 8px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: var(--panel);
-      box-shadow: var(--shadow);
+    .avatar-stack img[hidden], .avatar-fallback[hidden] {
+      display: none;
     }
 
-    .account-panel button {
-      width: 100%;
-      display: block;
-      padding: 10px 12px;
-      border: 0;
-      border-radius: 6px;
-      background: transparent;
-      color: var(--ink);
-      text-align: left;
-      cursor: pointer;
+    .large-avatar,
+    .large-avatar img,
+    .large-avatar .avatar-fallback {
+      width: 64px;
+      height: 64px;
+      font-size: 24px;
     }
 
-    .account-panel form {
-      margin: 0;
+    .user-settings-panel {
+      display: grid;
+      gap: 14px;
     }
 
-    .account-panel button:hover {
-      background: var(--hover);
-      color: var(--green-strong);
+    .user-settings-profile {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      min-width: 0;
+    }
+
+    .user-settings-profile > div {
+      display: grid;
+      gap: 2px;
+      min-width: 0;
+    }
+
+    .user-settings-profile strong,
+    .user-settings-profile span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     .theme-switch {
@@ -722,6 +754,7 @@ export function style(): string {
       justify-content: space-between;
       gap: 16px;
       margin: 0 0 8px;
+      padding: 0 12px;
       color: var(--muted);
       font-size: 18px;
       font-weight: 800;
@@ -767,6 +800,14 @@ export function style(): string {
 
     .amount.expense { color: var(--ink); }
     .amount.income { color: var(--green); }
+
+    .pending-groups {
+      margin-bottom: 12px;
+    }
+
+    .pending-bill {
+      background: var(--subtle);
+    }
 
     .bill-delete-form {
       display: none;
@@ -1114,6 +1155,22 @@ export function style(): string {
       background: var(--line);
     }
 
+    .purpose-combo {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 8px;
+    }
+
+    .purpose-select {
+      width: auto;
+      min-width: 6ch;
+      max-width: 14ch;
+    }
+
+    .purpose-input {
+      flex: 1;
+    }
+
     .fab {
       position: fixed;
       right: max(18px, calc((100vw - 760px) / 2 + 18px));
@@ -1254,57 +1311,50 @@ export function style(): string {
       color: var(--green-strong);
     }
 
-    .bar-chart {
-      display: grid;
-      gap: 18px;
+    .daily-chart {
       min-height: 228px;
+      display: grid;
       align-content: center;
     }
 
-    .bar-chart h3 {
-      margin: 0;
-      color: var(--green-strong);
-      font-size: 18px;
-    }
-
-    .bar-rows {
-      display: grid;
-      gap: 12px;
-    }
-
-    .bar-row {
-      display: grid;
-      grid-template-columns: 54px minmax(0, 1fr) 7.5ch;
-      gap: 10px;
-      align-items: center;
-    }
-
-    .bar-day {
-      color: var(--muted);
-      font-size: 13px;
-      font-weight: 800;
-      white-space: nowrap;
-    }
-
-    .bar-track {
-      height: 16px;
-      overflow: hidden;
-      border-radius: 999px;
-      background: var(--progress-track);
-    }
-
-    .bar-fill {
+    .daily-chart-svg {
+      width: 100%;
+      height: auto;
       display: block;
-      height: 100%;
-      border-radius: inherit;
-      background: var(--green);
+      overflow: visible;
     }
 
-    .bar-row strong {
-      color: var(--green-strong);
+    .daily-chart-title {
+      fill: var(--green-strong);
+      font-size: 18px;
+      font-weight: 800;
+    }
+
+    .daily-chart-grid {
+      stroke: var(--line);
+      stroke-width: 1;
+    }
+
+    .daily-chart-day {
+      fill: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .daily-chart-track {
+      fill: var(--progress-track);
+    }
+
+    .daily-chart-bar {
+      fill: var(--green);
+    }
+
+    .daily-chart-value {
+      fill: var(--green-strong);
+      font-size: 12px;
+      font-weight: 800;
       font-variant-numeric: tabular-nums;
-      text-align: right;
-      white-space: nowrap;
+      text-anchor: end;
     }
 
     .chart-empty {
@@ -1415,10 +1465,6 @@ export function style(): string {
       }
       .chart-nav.next {
         right: 4px;
-      }
-      .bar-row {
-        grid-template-columns: 44px minmax(0, 1fr) 7.5ch;
-        gap: 8px;
       }
       .pie-chart {
         justify-self: center;

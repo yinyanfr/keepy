@@ -20,6 +20,7 @@ export interface AppConfig {
   botUsername: string;
   databasePath: string;
   isProduction: boolean;
+  miniAppUrl: string;
   port: number;
   publicUrl: string;
   sessionSecret: string;
@@ -44,6 +45,10 @@ export function loadConfig(): AppConfig {
     botUsername: (process.env.BOT_USERNAME ?? "").replace(/^@/, ""),
     databasePath: process.env.DATABASE_PATH ?? "data/keepy.sqlite",
     isProduction,
+    miniAppUrl: resolveMiniAppUrl(
+      (process.env.MINI_APP_URL ?? "").trim(),
+      (process.env.BOT_USERNAME ?? "").replace(/^@/, ""),
+    ),
     port: numberFromEnv(process.env.PORT, 3000),
     publicUrl: stripTrailingSlash(process.env.PUBLIC_URL ?? ""),
     sessionSecret: sessionSecret ?? "dev-session-secret-change-me",
@@ -57,4 +62,12 @@ export function requireBotToken(config: AppConfig): string {
   }
 
   return config.botToken;
+}
+
+function resolveMiniAppUrl(configuredUrl: string, botUsername: string): string {
+  if (configuredUrl) {
+    return configuredUrl;
+  }
+
+  return botUsername ? `https://t.me/${botUsername}/keepy` : "";
 }

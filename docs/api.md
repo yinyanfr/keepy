@@ -2,7 +2,7 @@
 
 This document describes the HTTP surface exposed by Keepy today.
 
-The app is mostly server-rendered HTML. It does not currently expose a general JSON API for bookkeeping data.
+The app is mostly server-rendered HTML, but it also exposes a small authenticated JSON API under `/api`.
 
 ## Conventions
 
@@ -80,6 +80,9 @@ Success:
 - Status: `302 Found`
 - Redirect: `/`
 
+Telegram Mini App logins also set an internal client-source cookie so SSR can hide browser-only
+actions such as logout inside Telegram.
+
 ## HTML Pages
 
 ### GET `/`
@@ -93,9 +96,8 @@ Unauthenticated:
 
 Authenticated:
 
-- Status: `200 OK`
-- Returns the home page for the current user's default book
-- Includes current month summary and recent bill list
+- Status: `302 Found`
+- Redirects to `/books/:defaultBookId`
 
 ### GET `/settings`
 
@@ -119,14 +121,14 @@ Form fields:
 
 - `name`: string, optional in transport, falls back to current book name
 - `currency`: string or empty
-- `initialBalance`: number or empty
-- `currentBalance`: number or empty
 - `monthlyBudget`: number or empty
+
+An empty `monthlyBudget` clears the stored budget.
 
 Success:
 
 - Status: `302 Found`
-- Redirect: `/settings`
+- Redirect: `/books/:bookId`
 
 Validation failure:
 
@@ -137,6 +139,40 @@ Unauthenticated:
 
 - Status: `302 Found`
 - Redirect: `/`
+
+### GET `/user/settings`
+
+Returns the user settings page with the current profile, avatar controls, and a common-timezone
+selector.
+
+Success:
+
+- Status: `200 OK`
+- Returns HTML
+
+Unauthenticated:
+
+- Status: `302 Found`
+- Redirect: `/`
+
+### POST `/user/settings`
+
+Updates the current user's display timezone.
+
+Form fields:
+
+- `timezone`: one of Keepy's common IANA timezone options, such as `Asia/Shanghai`,
+  `Asia/Tokyo`, `Europe/Paris`, or `America/Los_Angeles`
+
+Success:
+
+- Status: `302 Found`
+- Redirect: `/user/settings`
+
+Validation failure:
+
+- Status: `400 Bad Request`
+- Body: `时区无效。`
 
 ### GET `/books`
 
@@ -231,6 +267,7 @@ Failure modes:
 
 - Status: `404 Not Found` when the path secret is wrong
 - Status: `403 Forbidden` when the Telegram secret header is wrong
+- Status: `403 Forbidden` when the Telegram secret header is missing
 
 Success:
 
@@ -251,8 +288,21 @@ Properties:
 - `secure` when `NODE_ENV=production`
 - 30-day TTL
 
+## JSON API
+
+Authenticated JSON endpoints:
+
+- `GET /api/me`
+- `GET /api/books/:bookId/month`
+- `POST /api/books/:bookId/bills`
+- `POST /api/sync/bills`
+
+Bill creation rules:
+
+- `amount` must be a finite non-zero number
+- `purpose` must be a non-empty string
+
 ## Notes
 
-- Keepy has no dedicated JSON endpoints for books, bills, or summaries yet
 - Most user-facing state changes are driven by HTML forms and Telegram updates
 - In local development without `PUBLIC_URL`, Telegram updates arrive through polling rather than the webhook route

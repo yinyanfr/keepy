@@ -9,7 +9,9 @@ import {
   renderHome,
   renderLogin,
   renderSettings,
+  renderUserSettings,
 } from "../features/miniApp/pages.js";
+import { clientSourceCookieName, isTelegramClientSource } from "../lib/clientSource.js";
 import { getMonthRange, monthRangeFromKey } from "../lib/dates.js";
 import { readSessionValue, sessionCookieName } from "../lib/session.js";
 import {
@@ -17,6 +19,8 @@ import {
   BookConflictError,
   BookDeleteError,
   BookNotFoundError,
+  InvalidBillAmountError,
+  InvalidTimeZoneError,
   type KeepyService,
   type User,
 } from "../services/keepyService.js";
@@ -55,8 +59,6 @@ export function createMiniAppRouter(service: KeepyService, config: AppConfig): R
     try {
       const updatedBook = service.updateBook(user.id, book.id, {
         currency: textBody(req, "currency"),
-        currentBalance: book.currentBalance,
-        initialBalance: book.initialBalance,
         monthlyBudget: numberBody(req, "monthlyBudget"),
         name: textBody(req, "name") ?? book.name,
       });
@@ -83,7 +85,7 @@ export function createMiniAppRouter(service: KeepyService, config: AppConfig): R
       summary: service.getCurrentMonthSummary(user, book.id),
     }));
 
-    res.send(renderBooks({ books, user }));
+    res.send(renderBooks({ books, isTelegramMiniApp: isTelegramMiniApp(req), user }));
   });
 
   router.post("/books", (req: Request, res: Response) => {
@@ -152,7 +154,14 @@ export function createMiniAppRouter(service: KeepyService, config: AppConfig): R
       return;
     }
 
-    res.send(renderSettings({ book, bookCount: service.listBooks(user.id).length, user }));
+    res.send(
+      renderSettings({
+        book,
+        bookCount: service.listBooks(user.id).length,
+        isTelegramMiniApp: isTelegramMiniApp(req),
+        user,
+      }),
+    );
   });
 
   router.post("/books/:bookId/settings", (req: Request, res: Response) => {
@@ -169,8 +178,6 @@ export function createMiniAppRouter(service: KeepyService, config: AppConfig): R
     try {
       const updatedBook = service.updateBook(user.id, book.id, {
         currency: textBody(req, "currency"),
-        currentBalance: book.currentBalance,
-        initialBalance: book.initialBalance,
         monthlyBudget: numberBody(req, "monthlyBudget"),
         name: textBody(req, "name") ?? book.name,
       });
@@ -223,8 +230,8 @@ export function createMiniAppRouter(service: KeepyService, config: AppConfig): R
 
     const bookId = numberParam(req.params.bookId);
     const amount = numberBody(req, "amount");
-    const purpose = textBody(req, "purpose");
-    if (bookId === null || amount === null || !purpose) {
+    const purpose = textBody(req, "purpose") || "默认";
+    if (bookId === null || amount === null || !isValidBillAmount(amount)) {
       res.status(400).send("记账内容无效。");
       return;
     }
@@ -241,6 +248,11 @@ export function createMiniAppRouter(service: KeepyService, config: AppConfig): R
     } catch (error) {
       if (error instanceof BookNotFoundError) {
         res.status(404).send("账本不存在。");
+        return;
+      }
+
+      if (error instanceof InvalidBillAmountError) {
+        res.status(400).send("记账内容无效。");
         return;
       }
 
@@ -301,6 +313,7 @@ export function createMiniAppRouter(service: KeepyService, config: AppConfig): R
         billSubmissionKey: randomUUID(),
         bills,
         book,
+        isTelegramMiniApp: isTelegramMiniApp(req),
         purposes: service.listPurposes(user.id),
         summary,
         user,
@@ -330,10 +343,57 @@ export function createMiniAppRouter(service: KeepyService, config: AppConfig): R
     const summary = service.getMonthSummary(user.id, book.id, range);
     const categories = service.getSpendingCategories(user.id, book.id, range);
 
-    res.send(renderHistory({ book, categories, monthKey: summary.monthKey, summary, user }));
+    res.send(
+      renderHistory({
+        book,
+        categories,
+        isTelegramMiniApp: isTelegramMiniApp(req),
+        monthKey: summary.monthKey,
+        summary,
+        user,
+      }),
+    );
+  });
+
+  router.get("/user/settings", (req: Request, res: Response) => {
+    const user = requireUser(req, res, service, config);
+    if (!user) {
+      return;
+    }
+
+    res.send(renderUserSettings({ isTelegramMiniApp: isTelegramMiniApp(req), user }));
+  });
+
+  router.post("/user/settings", (req: Request, res: Response) => {
+    const user = requireUser(req, res, service, config);
+    if (!user) {
+      return;
+    }
+
+    const timezone = textBody(req, "timezone");
+    if (!timezone) {
+      res.status(400).send("时区无效。");
+      return;
+    }
+
+    try {
+      service.updateUserTimezone(user.id, timezone);
+      res.redirect("/user/settings");
+    } catch (error) {
+      if (error instanceof InvalidTimeZoneError) {
+        res.status(400).send("时区无效。");
+        return;
+      }
+
+      throw error;
+    }
   });
 
   return router;
+}
+
+function isTelegramMiniApp(req: Request): boolean {
+  return isTelegramClientSource(req.cookies?.[clientSourceCookieName]);
 }
 
 function bookFromParam(
@@ -422,4 +482,8 @@ function returnTo(req: Request): string | null {
   }
 
   return value;
+}
+
+function isValidBillAmount(value: number): boolean {
+  return Number.isFinite(value) && value !== 0;
 }

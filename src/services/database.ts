@@ -36,8 +36,6 @@ export function migrate(db: SqliteDatabase): void {
       user_id INTEGER NOT NULL,
       name TEXT NOT NULL,
       currency TEXT,
-      initial_balance REAL,
-      current_balance REAL,
       monthly_budget REAL,
       is_default INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
@@ -103,4 +101,53 @@ export function migrate(db: SqliteDatabase): void {
       UNIQUE(entry_id, bill_id)
     );
   `);
+
+  removeLegacyBookBalanceColumns(db);
+}
+
+function removeLegacyBookBalanceColumns(db: SqliteDatabase): void {
+  const columns = db.prepare("PRAGMA table_info(books)").all() as Array<{ name: string }>;
+  const hasLegacyBalanceColumns = columns.some(
+    (column) => column.name === "initial_balance" || column.name === "current_balance",
+  );
+  if (!hasLegacyBalanceColumns) {
+    return;
+  }
+
+  db.pragma("foreign_keys = OFF");
+  try {
+    db.transaction(() => {
+      db.exec(`
+        CREATE TABLE books_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL,
+          name TEXT NOT NULL,
+          currency TEXT,
+          monthly_budget REAL,
+          is_default INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+          UNIQUE(user_id, name)
+        );
+
+        INSERT INTO books_new (
+          id, user_id, name, currency, monthly_budget, is_default, created_at, updated_at
+        )
+        SELECT id, user_id, name, currency, monthly_budget, is_default, created_at, updated_at
+        FROM books;
+
+        DROP TABLE books;
+        ALTER TABLE books_new RENAME TO books;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_books_one_default
+          ON books(user_id)
+          WHERE is_default = 1;
+
+        CREATE INDEX IF NOT EXISTS idx_books_user ON books(user_id);
+      `);
+    })();
+  } finally {
+    db.pragma("foreign_keys = ON");
+  }
 }

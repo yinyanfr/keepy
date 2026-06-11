@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import express from "express";
 import test from "node:test";
 
+import { clientSourceCookieName, type ClientSource } from "../lib/clientSource.js";
 import { createSessionValue, sessionCookieName } from "../lib/session.js";
 import { createMiniAppRouter } from "../routes/miniApp.js";
 import {
@@ -9,6 +10,7 @@ import {
   BookConflictError,
   BookDeleteError,
   BookNotFoundError,
+  InvalidTimeZoneError,
   type Book,
   type KeepyService,
   type User,
@@ -26,9 +28,7 @@ const user: User = {
 
 const defaultBook: Book = {
   currency: null,
-  currentBalance: null,
   id: 1,
-  initialBalance: null,
   isDefault: true,
   monthlyBudget: null,
   name: "默认",
@@ -40,6 +40,7 @@ const config = {
   botUsername: "keepy_bot",
   databasePath: ":memory:",
   isProduction: false,
+  miniAppUrl: "https://t.me/keepy_bot/keepy",
   port: 3000,
   publicUrl: "",
   sessionSecret: "session-secret",
@@ -151,6 +152,63 @@ test("records positive and negative amounts from the mini app form with an idemp
   ]);
 });
 
+test("rejects zero amounts from the mini app form", async () => {
+  let called = false;
+  const app = buildTestApp({
+    recordBillForBookOnce: () => {
+      called = true;
+      throw new Error("Should not record zero-amount bills.");
+    },
+  });
+
+  const response = await post(
+    app,
+    "/books/1/bills",
+    "amount=0&purpose=%E6%B5%8B%E8%AF%95",
+    "manual",
+  );
+
+  assert.equal(response.status, 400);
+  assert.equal(called, false);
+  assert.match(response.text, /记账内容无效/);
+});
+
+test("passes submitted book settings without balance fields", async () => {
+  let received: {
+    currency: string | null;
+    monthlyBudget: number | null;
+    name: string;
+  } | null = null;
+  const app = buildTestApp({
+    updateBook: (_userId, _bookId, input) => {
+      received = {
+        currency: input.currency,
+        monthlyBudget: input.monthlyBudget,
+        name: input.name,
+      };
+      return {
+        ...defaultBook,
+        monthlyBudget: input.monthlyBudget,
+        name: input.name,
+      };
+    },
+  });
+
+  const response = await post(
+    app,
+    "/books/1/settings",
+    "name=%E9%BB%98%E8%AE%A4&monthlyBudget=50",
+    "manual",
+  );
+
+  assert.equal(response.status, 302);
+  assert.deepEqual(received, {
+    currency: null,
+    monthlyBudget: 50,
+    name: "默认",
+  });
+});
+
 test("deletes a bill and redirects back to the current page", async () => {
   let deletedBillId: number | null = null;
   const app = buildTestApp({
@@ -203,6 +261,7 @@ test("uses bookId and month query params on the history page", async () => {
     [2, "2026-05"],
   ]);
   assert.match(response.text, /旅行/);
+  assert.match(response.text, /data-history-month-key="2026-05"/);
   assert.match(response.text, /2026年5月/);
   assert.doesNotMatch(response.text, /type="month"/);
 });
@@ -264,13 +323,71 @@ test("shows book monthly metrics on the book list", async () => {
   assert.match(response.text, /¥42/);
   assert.match(response.text, /本月余额/);
   assert.match(response.text, /¥58/);
+  assert.doesNotMatch(response.text, /<div class="bill-meta">¥<\/div>/);
+  assert.match(response.text, /data-dialog-open="book-drawer"/);
+  assert.match(response.text, /<dialog class="drawer" id="book-drawer">/);
 });
 
-function buildTestApp(overrides: Partial<KeepyService>): express.Express {
+test("renders user settings with timezone selector instead of an account dropdown", async () => {
+  const app = buildTestApp();
+
+  const response = await get(app, "/user/settings");
+
+  assert.equal(response.status, 200);
+  assert.match(response.text, /用户设置/);
+  assert.match(response.text, /name="timezone"/);
+  assert.match(response.text, /Asia\/Shanghai/);
+  assert.match(response.text, /退出登录/);
+  assert.doesNotMatch(response.text, /account-panel/);
+});
+
+test("updates user timezone from the user settings page", async () => {
+  let receivedTimezone: string | null = null;
+  const app = buildTestApp({
+    updateUserTimezone: (_userId, timezone) => {
+      receivedTimezone = timezone;
+      return { ...user, timezone };
+    },
+  });
+
+  const response = await post(app, "/user/settings", "timezone=America%2FLos_Angeles", "manual");
+
+  assert.equal(response.status, 302);
+  assert.equal(response.location, "/user/settings");
+  assert.equal(receivedTimezone, "America/Los_Angeles");
+});
+
+test("rejects invalid user timezone values", async () => {
+  const app = buildTestApp({
+    updateUserTimezone: () => {
+      throw new InvalidTimeZoneError();
+    },
+  });
+
+  const response = await post(app, "/user/settings", "timezone=Mars%2FOlympus", "manual");
+
+  assert.equal(response.status, 400);
+  assert.match(response.text, /时区无效/);
+});
+
+test("hides logout on user settings inside Telegram mini app", async () => {
+  const app = buildTestApp({}, "telegram");
+
+  const response = await get(app, "/user/settings");
+
+  assert.equal(response.status, 200);
+  assert.doesNotMatch(response.text, /action="\/auth\/logout"/);
+});
+
+function buildTestApp(
+  overrides: Partial<KeepyService> = {},
+  clientSource: ClientSource = "web",
+): express.Express {
   const app = express();
   app.use(express.urlencoded({ extended: false }));
   app.use((req, _res, next) => {
     req.cookies = {
+      [clientSourceCookieName]: clientSource,
       [sessionCookieName]: createSessionValue(user.telegramId, config.sessionSecret),
     };
     next();
@@ -324,6 +441,7 @@ function buildTestApp(overrides: Partial<KeepyService>): express.Express {
     }),
     setDefaultBook: () => defaultBook,
     updateBook: () => defaultBook,
+    updateUserTimezone: () => user,
     ...overrides,
   } as unknown as KeepyService;
 

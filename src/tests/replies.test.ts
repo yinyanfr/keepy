@@ -17,9 +17,7 @@ test("formats bot bill confirmation with budget remaining", () => {
     },
     book: {
       currency: "CNY",
-      currentBalance: null,
       id: 1,
-      initialBalance: null,
       isDefault: true,
       monthlyBudget: 100,
       name: "默认",
@@ -50,13 +48,54 @@ test("formats bot bill confirmation with budget remaining", () => {
   assert.match(text, /预算余额¥88/);
 });
 
+test("formats bot bill confirmation with the user timezone", () => {
+  const text = billCreatedText({
+    bill: {
+      amount: 12,
+      bookId: 1,
+      bookName: "默认",
+      currency: "CNY",
+      id: 1,
+      occurredAt: new Date("2026-06-09T04:00:00.000Z"),
+      purpose: "午饭",
+      userId: 1,
+    },
+    book: {
+      currency: "CNY",
+      id: 1,
+      isDefault: true,
+      monthlyBudget: null,
+      name: "默认",
+      userId: 1,
+    },
+    summary: {
+      billCount: 1,
+      bills: [],
+      budgetRemaining: null,
+      expenseTotal: 12,
+      incomeTotal: 0,
+      monthKey: "2026-06",
+      netBalance: -12,
+    },
+    user: {
+      firstName: "Yan",
+      id: 1,
+      lastName: null,
+      photoUrl: null,
+      telegramId: 42,
+      timezone: "America/Los_Angeles",
+      username: "yan",
+    },
+  });
+
+  assert.match(text, /成功于2026-06-08 21:00/);
+});
+
 test("formats bills command as category summary", () => {
   const text = billsText({
     book: {
       currency: "CNY",
-      currentBalance: null,
       id: 1,
-      initialBalance: null,
       isDefault: true,
       monthlyBudget: null,
       name: "默认",

@@ -44,7 +44,7 @@ Constraints:
 Behavior:
 
 - on repeat login or `/start`, profile fields are refreshed from Telegram
-- timezone is currently fixed at user creation time and not exposed in UI
+- timezone defaults to `Asia/Shanghai` and can be changed from user settings
 
 ### `books`
 
@@ -52,18 +52,16 @@ Stores bookkeeping books owned by a user.
 
 Columns:
 
-| Column            | Type      | Notes                       |
-| ----------------- | --------- | --------------------------- |
-| `id`              | `INTEGER` | Primary key                 |
-| `user_id`         | `INTEGER` | Foreign key to `users.id`   |
-| `name`            | `TEXT`    | Non-null                    |
-| `currency`        | `TEXT`    | Nullable                    |
-| `initial_balance` | `REAL`    | Nullable                    |
-| `current_balance` | `REAL`    | Nullable                    |
-| `monthly_budget`  | `REAL`    | Nullable                    |
-| `is_default`      | `INTEGER` | `0` or `1`, defaults to `0` |
-| `created_at`      | `TEXT`    | ISO timestamp               |
-| `updated_at`      | `TEXT`    | ISO timestamp               |
+| Column           | Type      | Notes                       |
+| ---------------- | --------- | --------------------------- |
+| `id`             | `INTEGER` | Primary key                 |
+| `user_id`        | `INTEGER` | Foreign key to `users.id`   |
+| `name`           | `TEXT`    | Non-null                    |
+| `currency`       | `TEXT`    | Nullable                    |
+| `monthly_budget` | `REAL`    | Nullable                    |
+| `is_default`     | `INTEGER` | `0` or `1`, defaults to `0` |
+| `created_at`     | `TEXT`    | ISO timestamp               |
+| `updated_at`     | `TEXT`    | ISO timestamp               |
 
 Constraints:
 
@@ -77,12 +75,6 @@ Behavior:
 - if no default book exists, the service promotes one or creates `默认`
 - book names are trimmed before write
 - empty names are rejected in the service layer
-
-Balance semantics:
-
-- `initial_balance` is a stored reference value only
-- `current_balance` is decremented when a bill is recorded and current balance is not `NULL`
-- if `current_balance` is `NULL`, Keepy does not compute or backfill it automatically
 
 ### `bills`
 
@@ -148,7 +140,8 @@ For a given user, book, and month range:
 - `netBalance`: `incomeTotal - expenseTotal`
 - `budgetRemaining`: `monthly_budget - expenseTotal`, or `NULL`
 
-Month boundaries are timezone-aware and derived from the user's timezone.
+Month boundaries are timezone-aware and derived from the user's timezone. Bill timestamps remain
+stored as absolute ISO/UTC values; the timezone only affects display, grouping, and bot replies.
 
 ## Operational Notes
 

@@ -89,9 +89,7 @@ Behavior:
 - ensures the user exists
 - loads the default book
 - computes the current month summary
-- replies with balance, expense, optional budget remaining, and up to 20 recent bills
-
-If more than 20 bills exist, the reply tells the user to view the Mini App.
+- replies with current month expense totals, optional budget remaining, and spending categories
 
 ## Plain-Text Ledger Messages
 
@@ -119,6 +117,7 @@ Parsing flow:
 2. Parse the first token as the amount.
 3. Use the remaining tokens as purpose and optional book name.
 4. Treat the last token as a book name only if it matches an existing user book exactly.
+5. Reject zero amounts.
 
 Fallback behavior:
 
@@ -195,11 +194,11 @@ Expected business errors are handled closer to the command or callback path wher
 
 ## Mini App Link Integration
 
-When `PUBLIC_URL` is available:
+When `MINI_APP_URL` is available:
 
 - `/start` and `/help` replies include a button labeled `打开 Mini App`
 
-When `PUBLIC_URL` is empty:
+When `MINI_APP_URL` is empty:
 
 - no Mini App button is attached
 

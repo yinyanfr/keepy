@@ -49,6 +49,10 @@ export function parseLedgerMessage(text: string, knownBookNames: string[]): Ledg
     return { error: "金额无效。" };
   }
 
+  if (amount === 0) {
+    return { error: "金额不能为 0。" };
+  }
+
   if (parts.length === 0) {
     return {
       amount,

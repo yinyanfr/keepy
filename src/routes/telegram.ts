@@ -10,14 +10,13 @@ export function createTelegramRouter(bot: Bot, config: AppConfig): Router {
   router.post(
     "/telegram/webhook/:secret",
     (req: Request, res: Response, next: NextFunction) => {
-      if (req.params.secret !== config.webhookSecret) {
-        res.sendStatus(404);
-        return;
-      }
-
-      const secretHeader = req.header("X-Telegram-Bot-Api-Secret-Token");
-      if (secretHeader && secretHeader !== config.webhookSecret) {
-        res.sendStatus(403);
+      const status = validateTelegramWebhookRequest(
+        typeof req.params.secret === "string" ? req.params.secret : undefined,
+        req.header("X-Telegram-Bot-Api-Secret-Token"),
+        config.webhookSecret,
+      );
+      if (status !== null) {
+        res.sendStatus(status);
         return;
       }
 
@@ -27,4 +26,20 @@ export function createTelegramRouter(bot: Bot, config: AppConfig): Router {
   );
 
   return router;
+}
+
+export function validateTelegramWebhookRequest(
+  pathSecret: string | undefined,
+  headerSecret: string | undefined,
+  webhookSecret: string,
+): 403 | 404 | null {
+  if (pathSecret !== webhookSecret) {
+    return 404;
+  }
+
+  if (headerSecret !== undefined && headerSecret !== webhookSecret) {
+    return 403;
+  }
+
+  return null;
 }

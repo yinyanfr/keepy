@@ -1,7 +1,8 @@
 import { appShell, loginPage } from "../../components/layout.js";
 import { formatMonthDay, formatTime } from "../../lib/dates.js";
 import { escapeAttribute, escapeHtml } from "../../lib/html.js";
-import { currencySymbol, formatAmount } from "../../lib/money.js";
+import { formatAmount } from "../../lib/money.js";
+import { commonTimeZones, timeZoneLabel } from "../../lib/timezones.js";
 import type { AppConfig } from "../../configs/env.js";
 import type {
   Bill,
@@ -25,17 +26,27 @@ export function renderHome(input: {
   billSubmissionKey: string;
   bills: PaginatedBills;
   book: Book;
+  isTelegramMiniApp?: boolean;
   purposes: string[];
   summary: MonthSummary;
   user: User;
 }): string {
-  const { billSubmissionKey, bills, book, purposes, summary, user } = input;
+  const {
+    billSubmissionKey,
+    bills,
+    book,
+    isTelegramMiniApp = false,
+    purposes,
+    summary,
+    user,
+  } = input;
   const bookUrl = `/books/${book.id}`;
   const settingsUrl = `${bookUrl}/settings`;
   const historyUrl = `/history?bookId=${book.id}&month=${encodeURIComponent(summary.monthKey)}`;
 
   return appShell({
     active: "home",
+    isTelegramMiniApp,
     title: "Keepy 本月明细",
     user,
     body: `
@@ -61,8 +72,13 @@ export function renderHome(input: {
   });
 }
 
-export function renderSettings(input: { book: Book; bookCount: number; user: User }): string {
-  const { book, bookCount, user } = input;
+export function renderSettings(input: {
+  book: Book;
+  bookCount: number;
+  isTelegramMiniApp?: boolean;
+  user: User;
+}): string {
+  const { book, bookCount, isTelegramMiniApp = false, user } = input;
   const deleteDisabled = book.isDefault || bookCount <= 1;
   const deleteHint = book.isDefault
     ? "默认账本不能删除。"
@@ -72,6 +88,7 @@ export function renderSettings(input: { book: Book; bookCount: number; user: Use
 
   return appShell({
     active: "settings",
+    isTelegramMiniApp,
     title: "Keepy 账本设置",
     user,
     body: `
@@ -129,12 +146,17 @@ export function renderSettings(input: { book: Book; bookCount: number; user: Use
   });
 }
 
-export function renderBooks(input: { books: BookListItem[]; user: User }): string {
-  const { books, user } = input;
+export function renderBooks(input: {
+  books: BookListItem[];
+  isTelegramMiniApp?: boolean;
+  user: User;
+}): string {
+  const { books, isTelegramMiniApp = false, user } = input;
   const defaultBook = books.find(({ book }) => book.isDefault)?.book ?? books[0]?.book;
 
   return appShell({
     active: "books",
+    isTelegramMiniApp,
     title: "Keepy 账本列表",
     user,
     body: `
@@ -168,7 +190,6 @@ export function renderBooks(input: { books: BookListItem[]; user: User }): strin
               <a class="book-row" href="/books/${book.id}">
                 <div class="book-row-main">
                   <strong>${escapeHtml(book.name)}</strong>
-                  <div class="bill-meta">${escapeHtml(currencyLabel(book))}</div>
                   <div class="book-row-metrics">
                     <span>
                       <small>累计消费</small>
@@ -191,24 +212,7 @@ export function renderBooks(input: { books: BookListItem[]; user: User }): strin
           .join("")}
       </div>
 
-      <section class="section-title">
-        <h2>增加账本</h2>
-      </section>
-      <form class="form-panel" method="post" action="/books">
-        <label>
-          名字
-          <input name="name" required />
-        </label>
-        <label>
-          币种
-          <input name="currency" placeholder="可留空" />
-        </label>
-        <label>
-          月预算
-          <input name="monthlyBudget" inputmode="decimal" />
-        </label>
-        <button class="button" type="submit">增加</button>
-      </form>
+      ${bookDrawer()}
     `,
   });
 }
@@ -216,14 +220,16 @@ export function renderBooks(input: { books: BookListItem[]; user: User }): strin
 export function renderHistory(input: {
   book: Book;
   categories: SpendingCategory[];
+  isTelegramMiniApp?: boolean;
   monthKey: string;
   summary: MonthSummary;
   user: User;
 }): string {
-  const { book, categories, monthKey, summary, user } = input;
+  const { book, categories, isTelegramMiniApp = false, monthKey, summary, user } = input;
 
   return appShell({
     active: "history",
+    isTelegramMiniApp,
     title: "Keepy 历史记录",
     user,
     body: `
@@ -234,15 +240,77 @@ export function renderHistory(input: {
       <section class="section-title">
         <h2>${escapeHtml(book.name)} · ${escapeHtml(summary.monthKey)}</h2>
       </section>
-      ${chartCarousel(categories, summary.bills, user.timezone, book.currency)}
+      <div data-history-month-key="${escapeAttribute(summary.monthKey)}">
+        ${chartCarousel(categories, summary.bills, user.timezone, book.currency)}
+        ${
+          summary.bills.length === 0
+            ? '<div class="empty">无数据</div>'
+            : billList(
+                summary.bills,
+                user.timezone,
+                historyUrl(book.id, ...monthParts(summary.monthKey)),
+              )
+        }
+      </div>
+    `,
+  });
+}
+
+export function renderUserSettings(input: { isTelegramMiniApp: boolean; user: User }): string {
+  const { isTelegramMiniApp, user } = input;
+  const fullName = [user.firstName, user.lastName].filter(Boolean).join(" ");
+  const displayName = fullName || (user.username ? `@${user.username}` : "Keepy");
+  const username = user.username ? `@${user.username}` : "";
+  const fallback = (user.firstName?.[0] ?? user.username?.[0] ?? "K").toUpperCase();
+
+  return appShell({
+    active: "user",
+    isTelegramMiniApp,
+    title: "Keepy 用户设置",
+    user,
+    body: `
+      <section class="section-title">
+        <h1>用户设置</h1>
+      </section>
+      <section class="form-panel user-settings-panel">
+        <div class="user-settings-profile">
+          <span class="avatar-stack large-avatar">
+            <img src="/auth/avatar" alt="" data-avatar-img />
+            <span class="avatar-fallback" data-avatar-fallback hidden>${escapeHtml(fallback)}</span>
+          </span>
+          <div>
+            <strong>${escapeHtml(displayName)}</strong>
+            ${username ? `<span class="muted">${escapeHtml(username)}</span>` : ""}
+          </div>
+        </div>
+        <button class="button secondary" type="button" data-refresh-avatar data-online-only>刷新头像</button>
+      </section>
+      <form class="form-panel" method="post" action="/user/settings">
+        <label>
+          时区
+          <select name="timezone" required>
+            ${commonTimeZones
+              .map(
+                (option) =>
+                  `<option value="${escapeAttribute(option.value)}" ${
+                    option.value === user.timezone ? "selected" : ""
+                  }>${escapeHtml(option.label)}</option>`,
+              )
+              .join("")}
+          </select>
+        </label>
+        <p class="muted">当前：${escapeHtml(timeZoneLabel(user.timezone))}</p>
+        <button class="button" type="submit">保存</button>
+      </form>
       ${
-        summary.bills.length === 0
-          ? '<div class="empty">无数据</div>'
-          : billList(
-              summary.bills,
-              user.timezone,
-              historyUrl(book.id, ...monthParts(summary.monthKey)),
-            )
+        isTelegramMiniApp
+          ? ""
+          : `<section class="danger-zone">
+              <h2>退出登录</h2>
+              <form method="post" action="/auth/logout">
+                <button class="button danger" type="submit">退出登录</button>
+              </form>
+            </section>`
       }
     `,
   });
@@ -322,36 +390,44 @@ function summaryPanel(book: Book, summary: MonthSummary, settingsUrl: string): s
       : null;
 
   return `
-    <details class="summary-strip">
+    <details class="summary-strip" data-summary-strip
+      data-currency="${escapeAttribute(book.currency ?? "")}"
+      data-monthly-budget="${escapeAttribute(book.monthlyBudget ?? "")}"
+      data-month-key="${escapeAttribute(summary.monthKey)}"
+      data-base-expense="${escapeAttribute(summary.expenseTotal)}"
+      data-base-income="${escapeAttribute(summary.incomeTotal)}"
+      data-base-net="${escapeAttribute(summary.netBalance)}">
       <summary class="summary-mobile-trigger">
         <span class="summary-mobile-metrics">
-          ${mobileSummaryItem("累计消费", escapeHtml(formatAmount(summary.expenseTotal, book.currency)))}
-          ${mobileSummaryItem("本月余额", budgetRemaining)}
+          ${mobileSummaryItem("累计消费", escapeHtml(formatAmount(summary.expenseTotal, book.currency)), "expense")}
+          ${mobileSummaryItem("本月余额", budgetRemaining, "budget")}
         </span>
         ${
           progress === null
             ? ""
             : `<span class="budget-progress" aria-label="预算使用进度">
-                <span style="width: ${progress.toFixed(2)}%"></span>
+                <span data-budget-progress style="width: ${progress.toFixed(2)}%"></span>
               </span>`
         }
       </summary>
       <div class="summary-grid">
-        ${summaryItem("累计消费", escapeHtml(formatAmount(summary.expenseTotal, book.currency)))}
-        ${summaryItem("本月余额", budgetRemaining)}
-        ${summaryItem("收入", escapeHtml(formatAmount(summary.incomeTotal, book.currency)))}
-        ${summaryItem("净收支", escapeHtml(formatAmount(summary.netBalance, book.currency)))}
+        ${summaryItem("累计消费", escapeHtml(formatAmount(summary.expenseTotal, book.currency)), "expense")}
+        ${summaryItem("本月余额", budgetRemaining, "budget")}
+        ${summaryItem("收入", escapeHtml(formatAmount(summary.incomeTotal, book.currency)), "income")}
+        ${summaryItem("净收支", escapeHtml(formatAmount(summary.netBalance, book.currency)), "net")}
       </div>
     </details>
   `;
 }
 
-function summaryItem(label: string, valueHtml: string): string {
-  return `<div class="summary-item"><span>${escapeHtml(label)}</span><strong>${valueHtml}</strong></div>`;
+function summaryItem(label: string, valueHtml: string, key?: string): string {
+  const data = key ? ` data-summary-item="${escapeAttribute(key)}"` : "";
+  return `<div class="summary-item"${data}><span>${escapeHtml(label)}</span><strong>${valueHtml}</strong></div>`;
 }
 
-function mobileSummaryItem(label: string, valueHtml: string): string {
-  return `<span class="summary-mobile-item"><span>${escapeHtml(label)}</span><strong>${valueHtml}</strong></span>`;
+function mobileSummaryItem(label: string, valueHtml: string, key?: string): string {
+  const data = key ? ` data-summary-item="${escapeAttribute(key)}"` : "";
+  return `<span class="summary-mobile-item"${data}><span>${escapeHtml(label)}</span><strong>${valueHtml}</strong></span>`;
 }
 
 function billList(bills: Bill[], timezone: string, returnTo: string): string {
@@ -375,7 +451,7 @@ function billList(bills: Bill[], timezone: string, returnTo: string): string {
         const currency = groupBills[0]?.currency ?? null;
 
         return `
-          <section class="day-group">
+          <section class="day-group" data-day-group="${escapeAttribute(label)}" data-base-day-expense="${escapeAttribute(dayExpense)}" data-currency="${escapeAttribute(currency ?? "")}">
             <h3 class="day-group-header">
               <span>${escapeHtml(label)}</span>
               <span class="day-total">${escapeHtml(formatAmount(dayExpense, currency))}</span>
@@ -449,11 +525,12 @@ function pageLink(
 }
 
 function fabDrawer(book: Book, purposes: string[], idempotencyKey: string): string {
-  const datalistId = `purposes-${book.id}`;
+  const selectId = `purpose-select-${book.id}`;
+  const inputId = `purpose-input-${book.id}`;
   return `
     <button class="fab" type="button" data-dialog-open="bill-drawer" aria-label="新增记账">${plusIcon()}</button>
     <dialog class="drawer" id="bill-drawer">
-      <form class="drawer-panel" method="post" action="/books/${book.id}/bills" data-once-form>
+      <form class="drawer-panel" method="post" action="/books/${book.id}/bills" data-bill-form data-book-id="${book.id}" data-currency="${escapeAttribute(book.currency ?? "")}" data-once-form>
         <input type="hidden" name="idempotencyKey" value="${escapeAttribute(idempotencyKey)}" />
         <div class="drawer-handle"></div>
         <section class="section-title">
@@ -466,10 +543,41 @@ function fabDrawer(book: Book, purposes: string[], idempotencyKey: string): stri
         </label>
         <label>
           类型
-          <input name="purpose" list="${datalistId}" required placeholder="例如 饮料" />
-          <datalist id="${datalistId}">
-            ${purposes.map((purpose) => `<option value="${escapeAttribute(purpose)}"></option>`).join("")}
-          </datalist>
+          <div class="purpose-combo">
+            <select id="${selectId}" class="purpose-select">
+              <option value="">自定义……</option>
+              ${purposes.map((purpose) => `<option value="${escapeAttribute(purpose)}">${escapeHtml(purpose)}</option>`).join("")}
+            </select>
+            <input id="${inputId}" name="purpose" class="purpose-input" placeholder="默认" />
+          </div>
+        </label>
+        <button class="button" type="submit">保存</button>
+      </form>
+    </dialog>
+  `;
+}
+
+function bookDrawer(): string {
+  return `
+    <button class="fab" type="button" data-dialog-open="book-drawer" aria-label="增加账本">${plusIcon()}</button>
+    <dialog class="drawer" id="book-drawer">
+      <form class="drawer-panel" method="post" action="/books" data-once-form>
+        <div class="drawer-handle"></div>
+        <section class="section-title">
+          <h2>增加账本</h2>
+          <button class="icon-button" type="button" data-dialog-close="book-drawer" aria-label="关闭">×</button>
+        </section>
+        <label>
+          名字
+          <input name="name" required />
+        </label>
+        <label>
+          币种
+          <input name="currency" placeholder="可留空" />
+        </label>
+        <label>
+          月预算
+          <input name="monthlyBudget" inputmode="decimal" />
         </label>
         <button class="button" type="submit">保存</button>
       </form>
@@ -555,25 +663,42 @@ function dailyBarChart(bills: Bill[], timezone: string, currency: string | null)
     return '<div class="empty chart-empty">无数据</div>';
   }
 
+  const width = 360;
+  const chartLeft = 60;
+  const chartWidth = 210;
+  const valueX = 346;
+  const top = 36;
+  const rowHeight = 20;
+  const height = top + rows.length * rowHeight + 10;
+  const grid = [0.25, 0.5, 0.75, 1]
+    .map((step) => {
+      const x = chartLeft + chartWidth * step;
+      return `<line class="daily-chart-grid" x1="${x.toFixed(1)}" y1="${top - 10}" x2="${x.toFixed(1)}" y2="${
+        height - 6
+      }"></line>`;
+    })
+    .join("");
+
   return `
-    <div class="bar-chart" role="img" aria-label="每日总消费柱状图">
-      <h3>每日总消费</h3>
-      <div class="bar-rows">
+    <div class="daily-chart" role="img" aria-label="每日总消费柱状图">
+      <svg class="daily-chart-svg" viewBox="0 0 ${width} ${height}" aria-hidden="true">
+        <text class="daily-chart-title" x="0" y="18">每日总消费</text>
+        ${grid}
         ${rows
-          .map((row) => {
-            const width = Math.max((row.amount / maxAmount) * 100, 3);
+          .map((row, index) => {
+            const y = top + index * rowHeight;
+            const barWidth = Math.max((row.amount / maxAmount) * chartWidth, 3);
             return `
-              <div class="bar-row">
-                <span class="bar-day">${escapeHtml(row.label)}</span>
-                <span class="bar-track">
-                  <span class="bar-fill" style="width: ${width.toFixed(2)}%"></span>
-                </span>
-                <strong>${escapeHtml(formatAmount(row.amount, currency))}</strong>
-              </div>
+              <g class="daily-chart-row">
+                <text class="daily-chart-day" x="0" y="${y + 11}">${escapeHtml(row.label)}</text>
+                <rect class="daily-chart-track" x="${chartLeft}" y="${y}" width="${chartWidth}" height="10" rx="5"></rect>
+                <rect class="daily-chart-bar" x="${chartLeft}" y="${y}" width="${barWidth.toFixed(1)}" height="10" rx="5"></rect>
+                <text class="daily-chart-value" x="${valueX}" y="${y + 11}">${escapeHtml(formatAmount(row.amount, currency))}</text>
+              </g>
             `;
           })
           .join("")}
-      </div>
+      </svg>
     </div>
   `;
 }
@@ -613,10 +738,6 @@ function pieSlicePath(cx: number, cy: number, radius: number, start: number, end
   return `M ${cx} ${cy} L ${x1.toFixed(2)} ${y1.toFixed(2)} A ${radius} ${radius} 0 ${largeArc} 1 ${x2.toFixed(
     2,
   )} ${y2.toFixed(2)} Z`;
-}
-
-function currencyLabel(book: Book): string {
-  return currencySymbol(book.currency) || "无币种";
 }
 
 function editIcon(): string {

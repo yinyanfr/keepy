@@ -1,11 +1,13 @@
 import { Router, type Request, type Response } from "express";
 
 import type { AppConfig } from "../configs/env.js";
+import { clientSourceCookieName, type ClientSource } from "../lib/clientSource.js";
 import { createSessionValue, readSessionValue, sessionCookieName } from "../lib/session.js";
 import { verifyLoginWidgetAuth, verifyWebAppInitData } from "../lib/telegramAuth.js";
 import type { KeepyService } from "../services/keepyService.js";
 
 const sessionMaxAgeMs = 30 * 24 * 60 * 60 * 1000;
+const clientSourceMaxAgeMs = sessionMaxAgeMs;
 
 export function createAuthRouter(service: KeepyService, config: AppConfig): Router {
   const router = Router();
@@ -21,6 +23,7 @@ export function createAuthRouter(service: KeepyService, config: AppConfig): Rout
 
     service.ensureUser(user);
     setSessionCookie(res, user.telegramId, config);
+    setClientSourceCookie(res, "telegram", config);
     res.json({ ok: true });
   });
 
@@ -34,11 +37,14 @@ export function createAuthRouter(service: KeepyService, config: AppConfig): Rout
 
     service.ensureUser(user);
     setSessionCookie(res, user.telegramId, config);
+    setClientSourceCookie(res, "web", config);
     res.redirect("/");
   });
 
   router.post("/auth/logout", (_req: Request, res: Response) => {
+    res.setHeader("Clear-Site-Data", '"cache", "storage"');
     res.clearCookie(sessionCookieName);
+    res.clearCookie(clientSourceCookieName);
     res.redirect("/");
   });
 
@@ -132,6 +138,15 @@ function setSessionCookie(res: Response, telegramId: number, config: AppConfig):
   res.cookie(sessionCookieName, createSessionValue(telegramId, config.sessionSecret), {
     httpOnly: true,
     maxAge: sessionMaxAgeMs,
+    sameSite: "lax",
+    secure: config.isProduction,
+  });
+}
+
+function setClientSourceCookie(res: Response, source: ClientSource, config: AppConfig): void {
+  res.cookie(clientSourceCookieName, source, {
+    httpOnly: true,
+    maxAge: clientSourceMaxAgeMs,
     sameSite: "lax",
     secure: config.isProduction,
   });

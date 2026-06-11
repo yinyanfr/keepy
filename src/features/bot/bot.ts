@@ -16,8 +16,6 @@ import {
 import type { KeepyService } from "../../services/keepyService.js";
 import { billCreatedText, billsText, helpText, welcomeText } from "./replies.js";
 
-const telegramMiniAppUrl = "https://t.me/bkpybot/keepy";
-
 export function createKeepyBot(service: KeepyService, config: AppConfig): Bot {
   const bot = new Bot(config.botToken);
 
@@ -29,11 +27,11 @@ export function createKeepyBot(service: KeepyService, config: AppConfig): Bot {
     }
 
     const result = service.ensureUser(profile);
-    await ctx.reply(welcomeText(result.created, config.publicUrl), miniAppReplyOptions());
+    await ctx.reply(welcomeText(result.created, config.miniAppUrl), miniAppReplyOptions(config));
   });
 
   bot.command("help", async (ctx) => {
-    await ctx.reply(helpText(config.publicUrl), miniAppReplyOptions());
+    await ctx.reply(helpText(config.miniAppUrl), miniAppReplyOptions(config));
   });
 
   bot.command("book", async (ctx) => {
@@ -167,58 +165,64 @@ export async function handleLedgerText(
     return;
   }
 
-  const { user } = service.ensureUser(profile);
-  const previousEntry = service.getBotEntry(user.id, event.chatId, event.messageId);
-  if (edited && !previousEntry) {
-    await ctx.reply("这条旧消息没有可同步的记账记录。请重新发送一条新的记账消息。");
-    return;
-  }
+  try {
+    const { user } = service.ensureUser(profile);
+    const previousEntry = service.getBotEntry(user.id, event.chatId, event.messageId);
+    if (edited && !previousEntry) {
+      await ctx.reply("这条旧消息没有可同步的记账记录。请重新发送一条新的记账消息。");
+      return;
+    }
 
-  const bookNames = service.listBooks(user.id).map((book) => book.name);
-  const parsed = parseLedgerMessage(text, bookNames);
+    const bookNames = service.listBooks(user.id).map((book) => book.name);
+    const parsed = parseLedgerMessage(text, bookNames);
 
-  if (!isLedgerParseSuccess(parsed)) {
-    const entry = service.upsertBotEntry({
-      chatId: event.chatId,
-      lastError: parsed.error,
-      messageId: event.messageId,
-      rawText: text,
-      status: "invalid",
-      userId: user.id,
-    });
-    const hadBills = service.countBotEntryBills(entry.id) > 0;
+    if (!isLedgerParseSuccess(parsed)) {
+      const entry = service.upsertBotEntry({
+        chatId: event.chatId,
+        lastError: parsed.error,
+        messageId: event.messageId,
+        rawText: text,
+        status: "invalid",
+        userId: user.id,
+      });
+      const hadBills = service.countBotEntryBills(entry.id) > 0;
 
-    if (edited && hadBills) {
+      if (edited && hadBills) {
+        await ctx.reply(
+          `修改后的格式无效：${parsed.error}\n已保留此前记录。如需删除，请在 Mini App 中删除记录。`,
+          miniAppReplyOptions(config),
+        );
+        return;
+      }
+
       await ctx.reply(
-        `修改后的格式无效：${parsed.error}\n已保留此前记录。如需删除，请在 Mini App 中删除记录。`,
-        miniAppReplyOptions(),
+        `${parsed.error}\n可以直接编辑这条消息为正确格式。\n\n${helpText(config.miniAppUrl)}`,
+        miniAppReplyOptions(config),
       );
       return;
     }
 
-    await ctx.reply(
-      `${parsed.error}\n可以直接编辑这条消息为正确格式。\n\n${helpText(config.publicUrl)}`,
-      miniAppReplyOptions(),
-    );
-    return;
+    const billInputs = botBillInputs(service, user, parsed);
+    const entry = service.upsertBotEntry({
+      chatId: event.chatId,
+      messageId: event.messageId,
+      rawText: text,
+      status: "valid",
+      userId: user.id,
+    });
+    const billTime = previousEntry?.firstBillAt ?? previousEntry?.createdAt ?? event.occurredAt;
+    const result = service.replaceBotEntryBills(entry.id, text, billInputs, billTime);
+    const replies = result.bills.map(({ bill, book }) => {
+      const summary = service.getCurrentMonthSummary(user, book.id, bill.occurredAt);
+      return billCreatedText({ bill, book, summary, user });
+    });
+
+    await ctx.reply(`${edited ? "已更新这条记账：\n" : ""}${replies.join("\n\n")}`);
+  } catch (error) {
+    console.error("记账处理失败", error);
+    const errMsg = error instanceof Error ? error.message : String(error ?? "未知错误");
+    await ctx.reply(`记账失败：${errMsg}`).catch(() => {});
   }
-
-  const billInputs = botBillInputs(service, user, parsed);
-  const entry = service.upsertBotEntry({
-    chatId: event.chatId,
-    messageId: event.messageId,
-    rawText: text,
-    status: "valid",
-    userId: user.id,
-  });
-  const billTime = previousEntry?.firstBillAt ?? previousEntry?.createdAt ?? event.occurredAt;
-  const result = service.replaceBotEntryBills(entry.id, text, billInputs, billTime);
-  const replies = result.bills.map(({ bill, book }) => {
-    const summary = service.getCurrentMonthSummary(user, book.id, bill.occurredAt);
-    return billCreatedText({ bill, book, summary, user });
-  });
-
-  await ctx.reply(`${edited ? "已更新这条记账：\n" : ""}${replies.join("\n\n")}`);
 }
 
 function botBillInputs(
@@ -255,9 +259,20 @@ function telegramDate(timestamp: number | undefined): Date {
   return timestamp ? new Date(timestamp * 1000) : new Date();
 }
 
-function miniAppReplyOptions(): { reply_markup: InlineKeyboard } {
+export function miniAppUrlFromConfig(config: Pick<AppConfig, "miniAppUrl">): string | null {
+  return config.miniAppUrl || null;
+}
+
+function miniAppReplyOptions(
+  config: Pick<AppConfig, "miniAppUrl">,
+): { reply_markup: InlineKeyboard } | undefined {
+  const miniAppUrl = miniAppUrlFromConfig(config);
+  if (!miniAppUrl) {
+    return undefined;
+  }
+
   return {
-    reply_markup: new InlineKeyboard().url("打开 Mini App", telegramMiniAppUrl),
+    reply_markup: new InlineKeyboard().url("打开 Mini App", miniAppUrl),
   };
 }
 
