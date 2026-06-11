@@ -221,7 +221,6 @@
       return;
     }
 
-    let recordedOnline = false;
     try {
       const response = await fetch(`/api/books/${bookId}/bills`, {
         body: JSON.stringify(bill),
@@ -229,8 +228,14 @@
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });
-      if (!response.ok) throw new Error("Submit failed");
-      recordedOnline = true;
+      if (!response.ok) {
+        if (response.status === 401) {
+          alert("登录已过期，请重新登录。");
+          location.assign("/");
+          return;
+        }
+        throw new Error("Submit failed");
+      }
       form.reset();
       resetFormState(form);
       closeDialog(form);
@@ -239,15 +244,12 @@
         location.assign(`/books/${bookId}`);
       }
     } catch {
-      if (recordedOnline) {
-        location.assign(`/books/${bookId}`);
-        return;
+      if (!navigator.onLine) {
+        await put("pendingBills", bill);
+        await registerBackgroundSync();
+        await renderPendingBills();
       }
-
-      await put("pendingBills", bill);
-      await registerBackgroundSync();
       resetFormState(form);
-      await renderPendingBills();
       updateOfflineState();
     }
   }
