@@ -699,7 +699,14 @@ export class KeepyService {
           throw new BookNotFoundError();
         }
 
-        const billId = this.insertBill(entry, book, input.amount, input.purpose, billTime, now);
+        const billId = this.insertBill(
+          { id: entry.userId },
+          book,
+          input.amount,
+          input.purpose,
+          billTime,
+          now,
+        );
         this.db
           .prepare(
             `
