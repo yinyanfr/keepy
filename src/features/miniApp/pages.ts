@@ -548,7 +548,7 @@ function fabDrawer(book: Book, purposes: string[], idempotencyKey: string): stri
               <option value="">自定义……</option>
               ${purposes.map((purpose) => `<option value="${escapeAttribute(purpose)}">${escapeHtml(purpose)}</option>`).join("")}
             </select>
-            <input id="${inputId}" name="purpose" class="purpose-input" required placeholder="例如 饮料" />
+            <input id="${inputId}" name="purpose" class="purpose-input" placeholder="默认" />
           </div>
         </label>
         <script>purposeSelectLink("${selectId}","${inputId}")</script>

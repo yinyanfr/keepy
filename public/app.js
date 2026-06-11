@@ -189,9 +189,9 @@
     const data = new FormData(form);
     const bookId = Number(form.dataset.bookId);
     const amount = Number(data.get("amount"));
-    const purpose = String(data.get("purpose") || "").trim();
+    const purpose = String(data.get("purpose") || "").trim() || "默认";
     const idempotencyKey = String(data.get("idempotencyKey") || crypto.randomUUID());
-    if (!Number.isFinite(amount) || !purpose || !Number.isInteger(bookId)) {
+    if (!Number.isFinite(amount) || !Number.isInteger(bookId)) {
       resetFormState(form);
       reportInvalidBillForm(form, amount, purpose);
       return;

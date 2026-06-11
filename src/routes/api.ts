@@ -76,8 +76,8 @@ export function createApiRouter(service: KeepyService, config: AppConfig): Route
 
     const bookId = numberParam(req.params.bookId);
     const amount = numberBody(req, "amount");
-    const purpose = textBody(req, "purpose");
-    if (bookId === null || amount === null || !isValidBillAmount(amount) || !purpose) {
+    const purpose = textBody(req, "purpose") || "默认";
+    if (bookId === null || amount === null || !isValidBillAmount(amount)) {
       res.status(400).json({ error: "记账内容无效。" });
       return;
     }
