@@ -459,8 +459,15 @@
   }
 
   function isCurrentMonthBill(bill) {
-    const monthKey = document.querySelector("[data-summary-strip]")?.dataset.monthKey;
+    const monthKey = currentPageMonthKey();
     return !monthKey || monthKeyFromDate(bill.occurredAt) === monthKey;
+  }
+
+  function currentPageMonthKey() {
+    return (
+      document.querySelector("[data-history-month-key]")?.dataset.historyMonthKey ||
+      document.querySelector("[data-summary-strip]")?.dataset.monthKey
+    );
   }
 
   function setSummaryValue(key, value) {

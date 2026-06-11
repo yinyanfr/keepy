@@ -261,6 +261,7 @@ test("uses bookId and month query params on the history page", async () => {
     [2, "2026-05"],
   ]);
   assert.match(response.text, /旅行/);
+  assert.match(response.text, /data-history-month-key="2026-05"/);
   assert.match(response.text, /2026年5月/);
   assert.doesNotMatch(response.text, /type="month"/);
 });

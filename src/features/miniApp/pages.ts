@@ -240,16 +240,18 @@ export function renderHistory(input: {
       <section class="section-title">
         <h2>${escapeHtml(book.name)} · ${escapeHtml(summary.monthKey)}</h2>
       </section>
-      ${chartCarousel(categories, summary.bills, user.timezone, book.currency)}
-      ${
-        summary.bills.length === 0
-          ? '<div class="empty">无数据</div>'
-          : billList(
-              summary.bills,
-              user.timezone,
-              historyUrl(book.id, ...monthParts(summary.monthKey)),
-            )
-      }
+      <div data-history-month-key="${escapeAttribute(summary.monthKey)}">
+        ${chartCarousel(categories, summary.bills, user.timezone, book.currency)}
+        ${
+          summary.bills.length === 0
+            ? '<div class="empty">无数据</div>'
+            : billList(
+                summary.bills,
+                user.timezone,
+                historyUrl(book.id, ...monthParts(summary.monthKey)),
+              )
+        }
+      </div>
     `,
   });
 }
