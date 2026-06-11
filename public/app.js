@@ -105,42 +105,50 @@
   }
 
   async function navigateTo(url, options = { push: true }) {
+    const targetUrl = parseUrl(url);
     try {
-      const response = await fetch(url, {
+      const response = await fetch(targetUrl.href, {
         credentials: "same-origin",
         headers: { "X-Keepy-PJAX": "1" },
       });
       if (!response.ok) throw new Error("Navigation failed");
       const html = await response.text();
-      const finalUrl = sameOriginUrl(response.url) ?? url;
-      await cachePageHtml(url, html);
-      if (finalUrl !== url) {
+      const finalUrl = sameOriginUrl(response.url) ?? targetUrl.href;
+      await cachePageHtml(targetUrl.href, html);
+      if (finalUrl !== targetUrl.href) {
         await cachePageHtml(finalUrl, html);
       }
       swapDocument(html);
       if (options.push) history.pushState({}, "", finalUrl);
       afterPageChange();
-      return;
+      return true;
     } catch {
-      const path = new URL(url).pathname + new URL(url).search;
+      const path = targetUrl.pathname + targetUrl.search;
       const cached = await get("pages", path);
       if (cached) {
         swapDocument(cached);
-        if (options.push) history.pushState({}, "", url);
+        if (options.push) history.pushState({}, "", targetUrl.href);
         afterPageChange();
+        return true;
       }
     }
+
+    return false;
   }
 
   async function cachePageHtml(url, html) {
-    const parsed = new URL(url);
+    const parsed = parseUrl(url);
     await put("pages", parsed.pathname + parsed.search, html);
   }
 
   function sameOriginUrl(url) {
     if (!url) return null;
-    const parsed = new URL(url);
+    const parsed = parseUrl(url);
     return parsed.origin === location.origin ? parsed.href : null;
+  }
+
+  function parseUrl(url) {
+    return new URL(url, location.href);
   }
 
   function swapDocument(html) {
@@ -213,6 +221,7 @@
       return;
     }
 
+    let recordedOnline = false;
     try {
       const response = await fetch(`/api/books/${bookId}/bills`, {
         body: JSON.stringify(bill),
@@ -221,11 +230,20 @@
         method: "POST",
       });
       if (!response.ok) throw new Error("Submit failed");
+      recordedOnline = true;
       form.reset();
       resetFormState(form);
       closeDialog(form);
-      await navigateTo(`/books/${bookId}`, { push: false });
+      const navigated = await navigateTo(`/books/${bookId}`, { push: false });
+      if (!navigated) {
+        location.assign(`/books/${bookId}`);
+      }
     } catch {
+      if (recordedOnline) {
+        location.assign(`/books/${bookId}`);
+        return;
+      }
+
       await put("pendingBills", bill);
       await registerBackgroundSync();
       resetFormState(form);

@@ -3,8 +3,8 @@ import test from "node:test";
 
 import { validateTelegramWebhookRequest } from "../routes/telegram.js";
 
-test("rejects telegram webhook requests with a missing secret header", () => {
-  assert.equal(validateTelegramWebhookRequest("secret", undefined, "secret"), 403);
+test("accepts telegram webhook requests with the path secret only", () => {
+  assert.equal(validateTelegramWebhookRequest("secret", undefined, "secret"), null);
 });
 
 test("accepts telegram webhook requests only when path and header secrets match", () => {

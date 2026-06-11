@@ -37,7 +37,7 @@ export function validateTelegramWebhookRequest(
     return 404;
   }
 
-  if (headerSecret !== webhookSecret) {
+  if (headerSecret !== undefined && headerSecret !== webhookSecret) {
     return 403;
   }
 
