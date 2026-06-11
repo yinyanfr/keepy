@@ -220,7 +220,8 @@ export async function handleLedgerText(
     await ctx.reply(`${edited ? "已更新这条记账：\n" : ""}${replies.join("\n\n")}`);
   } catch (error) {
     console.error("记账处理失败", error);
-    await ctx.reply("处理记账时出错，请稍后重试。").catch(() => {});
+    const errMsg = error instanceof Error ? error.message : String(error ?? "未知错误");
+    await ctx.reply(`记账失败：${errMsg}`).catch(() => {});
   }
 }
 
