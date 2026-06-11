@@ -70,6 +70,36 @@ test("api bill creation is idempotent by key", async () => {
   service.close();
 });
 
+test("api bill creation prefers custom purpose, then preset, then default", async () => {
+  const service = KeepyService.fromPath(":memory:");
+  const { user, defaultBook } = seedUser(service);
+  const app = buildApiApp(service, user.telegramId);
+
+  await postJson(app, `/api/books/${defaultBook.id}/bills`, {
+    amount: 6,
+    idempotencyKey: "custom-purpose",
+    purposeCustom: "夜宵",
+    purposePreset: "饮料",
+  });
+  await postJson(app, `/api/books/${defaultBook.id}/bills`, {
+    amount: 7,
+    idempotencyKey: "preset-purpose",
+    purposePreset: "公交",
+  });
+  await postJson(app, `/api/books/${defaultBook.id}/bills`, {
+    amount: 8,
+    idempotencyKey: "default-purpose",
+  });
+
+  const purposes = service
+    .getCurrentMonthSummary(user, defaultBook.id)
+    .bills.map((bill) => bill.purpose)
+    .sort();
+
+  assert.deepEqual(purposes, ["公交", "夜宵", "默认"]);
+  service.close();
+});
+
 test("api sync bills returns per-item results", async () => {
   const service = KeepyService.fromPath(":memory:");
   const { user, defaultBook } = seedUser(service);

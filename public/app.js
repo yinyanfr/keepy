@@ -182,25 +182,6 @@
         event.preventDefault();
         void submitBillForm(form);
       });
-      bindPurposeCombo(form);
-    });
-  }
-
-  function bindPurposeCombo(form) {
-    const select = form.querySelector(".purpose-select");
-    const input = form.querySelector(".purpose-input");
-    if (!select || !input || select.dataset.purposeLinked === "true") return;
-    select.dataset.purposeLinked = "true";
-    select.addEventListener("change", () => {
-      if (select.value) {
-        input.value = select.value;
-      }
-      input.focus();
-    });
-    input.addEventListener("input", () => {
-      if (input.value !== select.value) {
-        select.value = "";
-      }
     });
   }
 
@@ -208,7 +189,11 @@
     const data = new FormData(form);
     const bookId = Number(form.dataset.bookId);
     const amount = Number(data.get("amount"));
-    const purpose = String(data.get("purpose") || "").trim() || "默认";
+    const purpose =
+      String(data.get("purposeCustom") || "").trim() ||
+      String(data.get("purposePreset") || "").trim() ||
+      String(data.get("purpose") || "").trim() ||
+      "默认";
     const idempotencyKey = String(data.get("idempotencyKey") || crypto.randomUUID());
     if (!Number.isFinite(amount) || !Number.isInteger(bookId)) {
       resetFormState(form);

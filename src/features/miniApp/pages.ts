@@ -525,8 +525,6 @@ function pageLink(
 }
 
 function fabDrawer(book: Book, purposes: string[], idempotencyKey: string): string {
-  const selectId = `purpose-select-${book.id}`;
-  const inputId = `purpose-input-${book.id}`;
   return `
     <button class="fab" type="button" data-dialog-open="bill-drawer" aria-label="新增记账">${plusIcon()}</button>
     <dialog class="drawer" id="bill-drawer">
@@ -544,11 +542,11 @@ function fabDrawer(book: Book, purposes: string[], idempotencyKey: string): stri
         <label>
           类型
           <div class="purpose-combo">
-            <select id="${selectId}" class="purpose-select">
+            <select name="purposePreset" class="purpose-select">
               <option value="">自定义……</option>
               ${purposes.map((purpose) => `<option value="${escapeAttribute(purpose)}">${escapeHtml(purpose)}</option>`).join("")}
             </select>
-            <input id="${inputId}" name="purpose" class="purpose-input" placeholder="默认" />
+            <input name="purposeCustom" class="purpose-input" placeholder="默认" />
           </div>
         </label>
         <button class="button" type="submit">保存</button>

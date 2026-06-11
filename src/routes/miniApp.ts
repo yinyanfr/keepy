@@ -230,7 +230,7 @@ export function createMiniAppRouter(service: KeepyService, config: AppConfig): R
 
     const bookId = numberParam(req.params.bookId);
     const amount = numberBody(req, "amount");
-    const purpose = textBody(req, "purpose") || "默认";
+    const purpose = resolvePurpose(req);
     if (bookId === null || amount === null || !isValidBillAmount(amount)) {
       res.status(400).send("记账内容无效。");
       return;
@@ -445,6 +445,15 @@ function textBody(req: Request, key: string): string | null {
 
   const cleaned = value.trim();
   return cleaned ? cleaned : null;
+}
+
+function resolvePurpose(req: Request): string {
+  return (
+    textBody(req, "purposeCustom") ??
+    textBody(req, "purposePreset") ??
+    textBody(req, "purpose") ??
+    "默认"
+  );
 }
 
 function numberBody(req: Request, key: string): number | null {

@@ -113,10 +113,10 @@ test("returns 400 when deleting the default book", async () => {
 });
 
 test("records positive and negative amounts from the mini app form with an idempotency key", async () => {
-  const submissions: Array<{ amount: number; key: string }> = [];
+  const submissions: Array<{ amount: number; key: string; purpose: string }> = [];
   const app = buildTestApp({
-    recordBillForBookOnce: (_user, _bookId, amount, _purpose, key) => {
-      submissions.push({ amount, key });
+    recordBillForBookOnce: (_user, _bookId, amount, purpose, key) => {
+      submissions.push({ amount, key, purpose });
       return {
         bill: {
           amount,
@@ -136,20 +136,46 @@ test("records positive and negative amounts from the mini app form with an idemp
   await post(
     app,
     "/books/1/bills",
-    "amount=12&purpose=%E9%A5%AE%E6%96%99&idempotencyKey=abc",
+    "amount=12&purposePreset=%E9%A5%AE%E6%96%99&idempotencyKey=abc",
     "manual",
   );
   await post(
     app,
     "/books/1/bills",
-    "amount=-8&purpose=%E9%80%80%E6%AC%BE&idempotencyKey=def",
+    "amount=-8&purposeCustom=%E9%80%80%E6%AC%BE&idempotencyKey=def",
     "manual",
   );
 
   assert.deepEqual(submissions, [
-    { amount: 12, key: "abc" },
-    { amount: -8, key: "def" },
+    { amount: 12, key: "abc", purpose: "饮料" },
+    { amount: -8, key: "def", purpose: "退款" },
   ]);
+});
+
+test("uses default purpose when the mini app form leaves preset and custom blank", async () => {
+  const submissions: string[] = [];
+  const app = buildTestApp({
+    recordBillForBookOnce: (_user, _bookId, _amount, purpose) => {
+      submissions.push(purpose);
+      return {
+        bill: {
+          amount: 12,
+          bookId: 1,
+          bookName: "默认",
+          currency: null,
+          id: 1,
+          occurredAt: new Date(),
+          purpose,
+          userId: 1,
+        },
+        book: defaultBook,
+      };
+    },
+  });
+
+  await post(app, "/books/1/bills", "amount=12&idempotencyKey=blank-purpose", "manual");
+
+  assert.deepEqual(submissions, ["默认"]);
 });
 
 test("rejects zero amounts from the mini app form", async () => {

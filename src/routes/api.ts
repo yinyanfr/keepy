@@ -76,7 +76,7 @@ export function createApiRouter(service: KeepyService, config: AppConfig): Route
 
     const bookId = numberParam(req.params.bookId);
     const amount = numberBody(req, "amount");
-    const purpose = textBody(req, "purpose") || "默认";
+    const purpose = resolvePurpose(req);
     if (bookId === null || amount === null || !isValidBillAmount(amount)) {
       res.status(400).json({ error: "记账内容无效。" });
       return;
@@ -280,6 +280,15 @@ function dailyExpenses(bills: Bill[], timezone: string): Array<{ amount: number;
 function textBody(req: Request, key: string): string | null {
   const value = req.body?.[key];
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function resolvePurpose(req: Request): string {
+  return (
+    textBody(req, "purposeCustom") ??
+    textBody(req, "purposePreset") ??
+    textBody(req, "purpose") ??
+    "默认"
+  );
 }
 
 function numberBody(req: Request, key: string): number | null {
