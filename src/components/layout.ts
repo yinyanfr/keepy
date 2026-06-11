@@ -132,6 +132,20 @@ function themeToggleScript(): string {
 function miniAppInteractionScript(): string {
   return `<script>
     (() => {
+      window.purposeSelectLink = (selectId, inputId) => {
+        const select = document.getElementById(selectId);
+        const input = document.getElementById(inputId);
+        if (!select || !input) return;
+        if (select.dataset.purposeLinked === "true") return;
+        select.dataset.purposeLinked = "true";
+        select.addEventListener("change", () => {
+          if (select.value) {
+            input.value = select.value;
+          }
+          input.focus();
+        });
+      };
+
       document.addEventListener("click", (event) => {
         const openTarget = event.target.closest("[data-dialog-open]");
         if (openTarget) {
@@ -1153,6 +1167,22 @@ export function style(): string {
       margin: 2px auto 0;
       border-radius: 999px;
       background: var(--line);
+    }
+
+    .purpose-combo {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 8px;
+    }
+
+    .purpose-select {
+      width: auto;
+      min-width: 6ch;
+      max-width: 14ch;
+    }
+
+    .purpose-input {
+      flex: 1;
     }
 
     .fab {
