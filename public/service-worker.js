@@ -1,4 +1,4 @@
-const CACHE_VERSION = "keepy-pwa-v7";
+const CACHE_VERSION = "keepy-pwa-v8";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGE_CACHE = `${CACHE_VERSION}-pages`;
 const API_CACHE = `${CACHE_VERSION}-api`;
