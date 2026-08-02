@@ -47,7 +47,11 @@ test("records a new ledger message and replies", async () => {
   assert.ok(user);
   const defaultBook = service.ensureDefaultBook(user.id);
 
-  assert.equal(service.getCurrentMonthSummary(user, defaultBook.id).billCount, 1);
+  assert.equal(
+    service.getCurrentMonthSummary(user, defaultBook.id, new Date("2026-06-10T04:00:00.000Z"))
+      .billCount,
+    1,
+  );
   assert.equal(replies.length, 1);
   assert.match(replies[0] ?? "", /成功于2026-06-10 12:00/);
   assert.match(replies[0] ?? "", /用于吃饭的5/);

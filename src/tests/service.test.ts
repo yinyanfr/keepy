@@ -301,8 +301,9 @@ test("records bills into the specified book only", () => {
 
   service.recordBillForBook(user, travel.id, 88, "酒店", new Date("2026-06-09T04:00:00.000Z"));
 
-  assert.equal(service.getCurrentMonthSummary(user, defaultBook.id).billCount, 0);
-  assert.equal(service.getCurrentMonthSummary(user, travel.id).billCount, 1);
+  const summaryDate = new Date("2026-06-09T04:00:00.000Z");
+  assert.equal(service.getCurrentMonthSummary(user, defaultBook.id, summaryDate).billCount, 0);
+  assert.equal(service.getCurrentMonthSummary(user, travel.id, summaryDate).billCount, 1);
 
   service.close();
 });
@@ -335,7 +336,11 @@ test("deduplicates mini app bill submissions by idempotency key", () => {
   );
 
   assert.equal(first.bill.id, second.bill.id);
-  assert.equal(service.getCurrentMonthSummary(user, defaultBook.id).billCount, 1);
+  assert.equal(
+    service.getCurrentMonthSummary(user, defaultBook.id, new Date("2026-06-10T04:00:00.000Z"))
+      .billCount,
+    1,
+  );
 
   service.close();
 });
