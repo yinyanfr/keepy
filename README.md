@@ -140,13 +140,16 @@ npm run format:check
 npm test
 ```
 
-Deployment helpers:
+Container deployment:
 
 ```bash
-npm run serve
-npm run serve:logs
-npm run serve:stop
+docker compose up -d --build
+docker compose logs -f keepy
+docker compose down
 ```
+
+Production deployments use a Git checkout and Docker Compose. See
+[`docs/deployment.md`](docs/deployment.md) for the update and rollback workflow.
 
 ## Project Structure
 

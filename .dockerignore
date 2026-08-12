@@ -1,0 +1,15 @@
+.git
+.github
+.husky
+.env
+.env.*
+!.env.example
+.DS_Store
+Dockerfile*
+compose*.yaml
+compose*.yml
+node_modules
+dist
+data
+logs
+*.log

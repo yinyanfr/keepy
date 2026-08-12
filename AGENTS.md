@@ -84,10 +84,11 @@ src/index.ts             # Entry point: calls start()
 
 ## Deployment
 
-- Production uses PM2 via `ecosystem.config.cjs` ("fork" mode, 1 instance, 300M max memory)
-- `npm run serve` builds and starts/reloads PM2
-- `npm run serve:logs` tails PM2 logs
-- `npm run serve:stop` stops PM2
+- Production uses Docker Compose from `/etc/docker/containers/keepy`
+- The image is built from the server's Git checkout of `main`; do not upload application files
+- `docker compose up -d --build` builds and starts/recreates Keepy
+- `docker compose logs -f keepy` tails container logs
+- SQLite data is bind-mounted from `./data` to `/app/data`
 
 ## Documentation
 

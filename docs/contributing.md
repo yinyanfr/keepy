@@ -30,6 +30,12 @@ npm start
 
 If `PUBLIC_URL` is empty, the bot will use long polling automatically.
 
+To run the production container layout locally, fill `.env`, create `data/`, and run:
+
+```bash
+docker compose up -d --build
+```
+
 ## Project Workflow
 
 Before opening a change, run:
@@ -117,6 +123,8 @@ Relevant files:
 - `docs/database.md`
 - `docs/deployment.md`
 - `docs/product.md`
+
+Deployment changes must also keep `Dockerfile`, `compose.yaml`, and `.dockerignore` aligned.
 
 ## Pull Request Checklist
 

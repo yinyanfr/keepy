@@ -8,7 +8,7 @@ This directory is the working reference for Keepy.
 - `architecture.md`: runtime assembly, module ownership, request flow, and testing scope
 - `bot.md`: Telegram bot commands, message parsing, callbacks, and reply behavior
 - `database.md`: SQLite schema, constraints, and derived summary rules
-- `deployment.md`: local vs production modes, environment variables, PM2, and release checklist
+- `deployment.md`: local vs production modes, Docker Compose, updates, and release checklist
 - `product.md`: business rules, user-visible behavior, parsing semantics, and known limitations
 - `contributing.md`: local workflow, validation commands, and change expectations
 

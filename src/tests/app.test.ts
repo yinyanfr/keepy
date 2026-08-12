@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { start } from "../app.js";
+import { createRuntime, start } from "../app.js";
 import type { AppConfig } from "../configs/env.js";
 
 test("starts long polling when PUBLIC_URL is empty", async () => {
@@ -91,4 +91,33 @@ test("listens before Telegram initialization completes", async () => {
   const finishInit = resolveInit as () => void;
   finishInit();
   await startPromise;
+});
+
+test("reports container health", async () => {
+  const runtime = createRuntime({
+    botToken: "test-token",
+    botUsername: "keepy_bot",
+    databasePath: ":memory:",
+    isProduction: false,
+    miniAppUrl: "https://t.me/keepy_bot/keepy",
+    port: 0,
+    publicUrl: "",
+    sessionSecret: "session-secret",
+    webhookSecret: "webhook-secret",
+  });
+  const server = runtime.app.listen(0);
+
+  try {
+    const address = server.address();
+    assert.ok(address && typeof address !== "string");
+    const response = await fetch(`http://127.0.0.1:${address.port}/healthz`);
+
+    assert.equal(response.status, 200);
+    assert.equal(await response.text(), "ok");
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+    });
+    runtime.service.close();
+  }
 });
