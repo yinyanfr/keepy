@@ -88,7 +88,10 @@ Current pages:
 - home summary
 - settings for the default book
 - books list and new-book form
-- grouped history
+- book- and month-filtered history with total expenses and income for the selected month
+
+History totals use the monthly summary rules above, so positive records contribute to total expenses
+and the absolute value of negative records contributes to total income.
 
 Current validations:
 

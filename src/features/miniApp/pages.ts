@@ -237,10 +237,11 @@ export function renderHistory(input: {
         <h1>历史记录</h1>
       </section>
       ${monthPicker(book.id, monthKey)}
-      <section class="section-title">
-        <h2>${escapeHtml(book.name)} · ${escapeHtml(summary.monthKey)}</h2>
-      </section>
       <div data-history-month-key="${escapeAttribute(summary.monthKey)}">
+        ${historyTotals(summary, book.currency)}
+        <section class="section-title">
+          <h2>${escapeHtml(book.name)} · ${escapeHtml(summary.monthKey)}</h2>
+        </section>
         ${chartCarousel(categories, summary.bills, user.timezone, book.currency)}
         ${
           summary.bills.length === 0
@@ -254,6 +255,21 @@ export function renderHistory(input: {
       </div>
     `,
   });
+}
+
+function historyTotals(summary: MonthSummary, currency: string | null): string {
+  return `
+    <section class="history-totals" aria-label="所选月份收支汇总">
+      <div class="history-total expense">
+        <span>总支出</span>
+        <strong>${escapeHtml(formatAmount(summary.expenseTotal, currency))}</strong>
+      </div>
+      <div class="history-total income">
+        <span>总收入</span>
+        <strong>${escapeHtml(formatAmount(summary.incomeTotal, currency))}</strong>
+      </div>
+    </section>
+  `;
 }
 
 export function renderUserSettings(input: { isTelegramMiniApp: boolean; user: User }): string {

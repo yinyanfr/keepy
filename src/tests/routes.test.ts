@@ -292,7 +292,7 @@ test("uses bookId and month query params on the history page", async () => {
   assert.doesNotMatch(response.text, /type="month"/);
 });
 
-test("renders history charts without a title currency badge", async () => {
+test("renders the selected month's income, expenses, and charts", async () => {
   const book = { ...defaultBook, currency: "CNY", name: "月花费" };
   const app = buildTestApp({
     getBook: () => book,
@@ -309,10 +309,21 @@ test("renders history charts without a title currency badge", async () => {
           purpose: "吃饭",
           userId: user.id,
         },
+        {
+          amount: -30,
+          bookId: book.id,
+          bookName: book.name,
+          currency: book.currency,
+          id: 2,
+          occurredAt: new Date("2026-06-11T04:00:00.000Z"),
+          purpose: "退款",
+          userId: user.id,
+        },
       ],
-      billCount: 1,
+      billCount: 2,
       expenseTotal: 12,
-      netBalance: -12,
+      incomeTotal: 30,
+      netBalance: 18,
     }),
     getSpendingCategories: () => [{ amount: 12, percentage: 100, purpose: "吃饭" }],
   });
@@ -320,6 +331,9 @@ test("renders history charts without a title currency badge", async () => {
   const response = await get(app, "/history?bookId=1&month=2026-06");
 
   assert.equal(response.status, 200);
+  assert.match(response.text, /aria-label="所选月份收支汇总"/);
+  assert.match(response.text, /<span>总支出<\/span>\s*<strong>¥12<\/strong>/);
+  assert.match(response.text, /<span>总收入<\/span>\s*<strong>¥30<\/strong>/);
   assert.match(response.text, /data-chart-carousel/);
   assert.match(response.text, /每日总消费/);
   assert.doesNotMatch(response.text, /<span class="muted">¥<\/span>/);

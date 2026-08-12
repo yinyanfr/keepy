@@ -896,6 +896,47 @@ export function style(): string {
       font-size: 13px;
     }
 
+    .history-totals {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      overflow: hidden;
+      margin-top: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+
+    .history-total {
+      display: grid;
+      min-width: 0;
+      gap: 4px;
+      padding: 14px;
+    }
+
+    .history-total + .history-total {
+      border-left: 1px solid var(--line);
+    }
+
+    .history-total span {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .history-total strong {
+      overflow: hidden;
+      font-size: 22px;
+      font-variant-numeric: tabular-nums;
+      line-height: 1.25;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .history-total.income strong {
+      color: var(--green-strong);
+    }
+
     label {
       display: grid;
       gap: 6px;
