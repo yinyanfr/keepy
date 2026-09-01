@@ -937,6 +937,68 @@ export function style(): string {
       color: var(--green-strong);
     }
 
+    .history-month-list {
+      display: grid;
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .history-month-card {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      transition: border-color 160ms ease, transform 160ms ease;
+    }
+
+    .history-month-card:hover {
+      border-color: var(--green);
+      transform: translateY(-1px);
+    }
+
+    .history-month-card h2 {
+      margin: 0;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      font-size: 18px;
+    }
+
+    .history-month-metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .history-month-metric {
+      display: grid;
+      min-width: 0;
+      gap: 4px;
+      padding: 12px 14px;
+      border-left: 1px solid var(--line);
+    }
+
+    .history-month-metric:first-child {
+      border-left: 0;
+    }
+
+    .history-month-metric small {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .history-month-metric strong {
+      overflow: hidden;
+      font-size: 17px;
+      font-variant-numeric: tabular-nums;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .history-month-metric.income strong {
+      color: var(--green-strong);
+    }
+
     label {
       display: grid;
       gap: 6px;
@@ -1431,6 +1493,12 @@ export function style(): string {
       margin-top: 20px;
       display: grid;
       place-items: center;
+    }
+
+    @media (max-width: 600px) {
+      .history-month-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .history-month-metric:nth-child(odd) { border-left: 0; }
+      .history-month-metric:nth-child(n+3) { border-top: 1px solid var(--line); }
     }
 
     @media (max-width: 480px) {

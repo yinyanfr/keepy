@@ -87,7 +87,8 @@ Current test coverage includes:
 
 - service behavior
 - route validation
-- selected-month history totals
+- paginated history overviews and selected-month details
+- monthly budget snapshot behavior
 - Telegram auth verification
 - startup behavior
 - parser behavior

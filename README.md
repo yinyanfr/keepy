@@ -118,7 +118,8 @@ Rules:
 - `GET /books` list books and create new books
 - `POST /books` create a book
 - `POST /books/default` change the default book
-- `GET /history` full grouped bill history
+- `GET /history` paginated monthly history overview
+- `GET /history/:monthKey` charts and full bill history for one month
 
 Auth endpoints:
 

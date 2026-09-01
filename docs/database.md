@@ -76,6 +76,25 @@ Behavior:
 - book names are trimmed before write
 - empty names are rejected in the service layer
 
+### `book_monthly_budgets`
+
+Stores editable budget snapshots for individual book months.
+
+| Column           | Type      | Notes                            |
+| ---------------- | --------- | -------------------------------- |
+| `id`             | `INTEGER` | Primary key                      |
+| `book_id`        | `INTEGER` | Foreign key to `books.id`        |
+| `month_key`      | `TEXT`    | `YYYY-MM` in the user's timezone |
+| `monthly_budget` | `REAL`    | Nullable                         |
+| `created_at`     | `TEXT`    | ISO timestamp                    |
+| `updated_at`     | `TEXT`    | ISO timestamp                    |
+
+Constraints and indexes:
+
+- foreign key: `book_id -> books.id ON DELETE CASCADE`
+- unique: `(book_id, month_key)`
+- `idx_book_monthly_budgets_book` on `(book_id, month_key)`
+
 ### `bills`
 
 Stores recorded ledger entries.
@@ -113,12 +132,14 @@ Behavior:
 users 1 --- n books
 users 1 --- n bills
 books 1 --- n bills
+books 1 --- n book_monthly_budgets
 ```
 
 Cascade behavior:
 
 - deleting a user deletes their books and bills
 - deleting a book deletes its bills
+- deleting a book deletes its monthly budget snapshots
 
 ## Service-Level Data Rules
 
@@ -142,6 +163,19 @@ For a given user, book, and month range:
 
 Month boundaries are timezone-aware and derived from the user's timezone. Bill timestamps remain
 stored as absolute ISO/UTC values; the timezone only affects display, grouping, and bot replies.
+
+## Monthly Budget Snapshots
+
+`book_monthly_budgets` stores one nullable budget per book and `YYYY-MM` month key. On upgrade,
+Keepy fills the continuous range from each book's earliest bill month through the current month with
+the book's current budget. New books receive a current-month snapshot.
+
+Changing a book's normal budget preserves prior snapshots, updates the current month, and provides
+the default for future months. A month detail page can override or clear one month's snapshot without
+changing adjacent months.
+
+History overview `remaining` is `monthly budget snapshot - expenseTotal`; income does not increase
+this overview value. Existing home and bot monthly balance behavior remains unchanged.
 
 ## Operational Notes
 

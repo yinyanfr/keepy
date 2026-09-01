@@ -77,7 +77,9 @@ Values:
 - `expenseTotal`: sum of positive amounts
 - `incomeTotal`: absolute sum of negative amounts
 - `netBalance`: `incomeTotal - expenseTotal`
-- `budgetRemaining`: `monthlyBudget - expenseTotal`, or `null` when no budget is set
+- history overview remaining: monthly budget snapshot minus `expenseTotal`, or `null` when no budget
+  is set
+- existing home and bot budget remaining: `monthlyBudget + incomeTotal - expenseTotal`
 
 Month grouping is timezone-aware and uses the user's timezone.
 
@@ -88,10 +90,13 @@ Current pages:
 - home summary
 - settings for the default book
 - books list and new-book form
-- book- and month-filtered history with total expenses and income for the selected month
+- paginated monthly history overview for the selected book
+- single-month history details with charts, totals, and the complete bill list
 
-History totals use the monthly summary rules above, so positive records contribute to total expenses
-and the absolute value of negative records contributes to total income.
+The overview includes every natural month from the current month through the earliest bill month,
+including empty months, and shows 12 months per page. Each month shows total expenses, total income,
+its budget snapshot, and budget remaining after expenses. Selecting a card or a month in the picker
+opens the single-month detail page. The detail page can edit only that month's budget snapshot.
 
 Current validations:
 
@@ -119,5 +124,5 @@ Cookie properties:
 
 - timezone is configurable from the user settings page and affects display plus bot replies only
 - there is no bill editing or deletion UI
-- there is no pagination for history pages
+- single-month detail pages do not paginate bills
 - there is no separate API surface for the Mini App

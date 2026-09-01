@@ -41,7 +41,8 @@ The service layer contains the main domain logic:
 - create and update books
 - record bills
 - compute monthly summaries
-- group bill history by month
+- aggregate and paginate contiguous history months
+- preserve and edit per-month budget snapshots
 
 This file is the main place to change bookkeeping behavior.
 
@@ -58,6 +59,7 @@ Schema tables:
 
 - `users`
 - `books`
+- `book_monthly_budgets`
 - `bills`
 
 Important constraints:

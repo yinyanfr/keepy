@@ -75,5 +75,18 @@ test("removes legacy book balance columns during migration", () => {
     name: "默认",
   });
 
+  db.prepare(
+    `
+      INSERT INTO book_monthly_budgets (
+        book_id, month_key, monthly_budget, created_at, updated_at
+      ) VALUES (1, '2026-06', 1000, '2026-06-11T00:00:00.000Z', '2026-06-11T00:00:00.000Z')
+    `,
+  ).run();
+  db.prepare("DELETE FROM books WHERE id = 1").run();
+  const budgetCount = db.prepare("SELECT COUNT(*) AS count FROM book_monthly_budgets").get() as {
+    count: number;
+  };
+  assert.equal(budgetCount.count, 0);
+
   db.close();
 });

@@ -1,5 +1,5 @@
 import { appShell, loginPage } from "../../components/layout.js";
-import { formatMonthDay, formatTime } from "../../lib/dates.js";
+import { formatMonthDay, formatTime, parseMonthKey } from "../../lib/dates.js";
 import { escapeAttribute, escapeHtml } from "../../lib/html.js";
 import { formatAmount } from "../../lib/money.js";
 import { commonTimeZones, timeZoneLabel } from "../../lib/timezones.js";
@@ -9,6 +9,7 @@ import type {
   Book,
   MonthSummary,
   PaginatedBills,
+  PaginatedHistoryMonths,
   SpendingCategory,
   User,
 } from "../../services/keepyService.js";
@@ -42,7 +43,7 @@ export function renderHome(input: {
   } = input;
   const bookUrl = `/books/${book.id}`;
   const settingsUrl = `${bookUrl}/settings`;
-  const historyUrl = `/history?bookId=${book.id}&month=${encodeURIComponent(summary.monthKey)}`;
+  const historyUrl = `/history?bookId=${book.id}`;
 
   return appShell({
     active: "home",
@@ -217,15 +218,14 @@ export function renderBooks(input: {
   });
 }
 
-export function renderHistory(input: {
+export function renderHistoryOverview(input: {
   book: Book;
-  categories: SpendingCategory[];
+  history: PaginatedHistoryMonths;
   isTelegramMiniApp?: boolean;
-  monthKey: string;
-  summary: MonthSummary;
+  pickerMonthKey: string;
   user: User;
 }): string {
-  const { book, categories, isTelegramMiniApp = false, monthKey, summary, user } = input;
+  const { book, history, isTelegramMiniApp = false, pickerMonthKey, user } = input;
 
   return appShell({
     active: "history",
@@ -236,11 +236,42 @@ export function renderHistory(input: {
       <section class="section-title">
         <h1>历史记录</h1>
       </section>
+      ${monthPicker(book.id, pickerMonthKey)}
+      <div class="history-month-list" data-history-overview>
+        ${history.items.map((month) => historyMonthCard(book, month)).join("")}
+      </div>
+      ${historyPagination(book.id, history)}
+    `,
+  });
+}
+
+export function renderHistoryMonth(input: {
+  book: Book;
+  budget: number | null;
+  categories: SpendingCategory[];
+  isTelegramMiniApp?: boolean;
+  monthKey: string;
+  summary: MonthSummary;
+  user: User;
+}): string {
+  const { book, budget, categories, isTelegramMiniApp = false, monthKey, summary, user } = input;
+
+  return appShell({
+    active: "history",
+    isTelegramMiniApp,
+    title: "Keepy 历史记录",
+    user,
+    body: `
+      <section class="section-title title-row">
+        <h1>历史记录</h1>
+        <a class="button secondary" href="/history?bookId=${book.id}">返回总览</a>
+      </section>
       ${monthPicker(book.id, monthKey)}
       <div data-history-month-key="${escapeAttribute(summary.monthKey)}">
         ${historyTotals(summary, book.currency)}
-        <section class="section-title">
+        <section class="section-title title-row">
           <h2>${escapeHtml(book.name)} · ${escapeHtml(summary.monthKey)}</h2>
+          <button class="icon-button" type="button" data-dialog-open="month-budget-dialog" aria-label="编辑该月预算">${editIcon()}</button>
         </section>
         ${chartCarousel(categories, summary.bills, user.timezone, book.currency)}
         ${
@@ -253,8 +284,33 @@ export function renderHistory(input: {
               )
         }
       </div>
+      ${monthlyBudgetDialog(book, summary.monthKey, budget)}
     `,
   });
+}
+
+function historyMonthCard(book: Book, month: PaginatedHistoryMonths["items"][number]): string {
+  const parts = parseMonthKey(month.monthKey);
+  const label = parts ? `${parts.year}年 ${parts.month}月` : month.monthKey;
+  const budget = month.budget === null ? "未设置" : formatAmount(month.budget, book.currency);
+  const remaining =
+    month.remaining === null ? "未设置" : formatAmount(month.remaining, book.currency);
+
+  return `
+    <a class="history-month-card" href="${historyMonthUrl(book.id, month.monthKey)}">
+      <h2>${escapeHtml(label)}</h2>
+      <div class="history-month-metrics">
+        ${historyMonthMetric("总支出", formatAmount(month.expenseTotal, book.currency), "expense")}
+        ${historyMonthMetric("总收入", formatAmount(month.incomeTotal, book.currency), "income")}
+        ${historyMonthMetric("预算", budget, "budget")}
+        ${historyMonthMetric("结余", remaining, "remaining")}
+      </div>
+    </a>
+  `;
+}
+
+function historyMonthMetric(label: string, value: string, key: string): string {
+  return `<span class="history-month-metric ${escapeAttribute(key)}"><small>${escapeHtml(label)}</small><strong>${escapeHtml(value)}</strong></span>`;
 }
 
 function historyTotals(summary: MonthSummary, currency: string | null): string {
@@ -269,6 +325,27 @@ function historyTotals(summary: MonthSummary, currency: string | null): string {
         <strong>${escapeHtml(formatAmount(summary.incomeTotal, currency))}</strong>
       </div>
     </section>
+  `;
+}
+
+function monthlyBudgetDialog(book: Book, monthKey: string, budget: number | null): string {
+  return `
+    <dialog class="confirm-dialog" id="month-budget-dialog">
+      <form class="dialog-card" method="post" action="/history/${escapeAttribute(monthKey)}/budget?bookId=${book.id}">
+        <section class="section-title">
+          <h2>编辑 ${escapeHtml(monthKey)} 预算</h2>
+          <button class="icon-button" type="button" data-dialog-close="month-budget-dialog" aria-label="关闭">×</button>
+        </section>
+        <label>
+          月预算
+          <input name="monthlyBudget" inputmode="decimal" value="${escapeAttribute(budget ?? "")}" placeholder="留空表示未设置" />
+        </label>
+        <div class="button-row">
+          <button class="button secondary" type="button" data-dialog-close="month-budget-dialog">取消</button>
+          <button class="button" type="submit">保存</button>
+        </div>
+      </form>
+    </dialog>
   `;
 }
 
@@ -333,7 +410,7 @@ export function renderUserSettings(input: { isTelegramMiniApp: boolean; user: Us
 }
 
 function monthPicker(bookId: number, monthKey: string): string {
-  const { month, year } = parseMonthKey(monthKey);
+  const { month, year } = parseMonthKey(monthKey) ?? { month: 1, year: 1970 };
   const dialogId = `month-picker-${bookId}`;
 
   return `
@@ -345,7 +422,7 @@ function monthPicker(bookId: number, monthKey: string): string {
           <span>选择月份</span>
         </button>
       </span>
-      <a class="button secondary" href="/history?bookId=${bookId}&month=${escapeAttribute(monthKey)}">查看</a>
+      <a class="button secondary" href="${historyMonthUrl(bookId, monthKey)}">查看</a>
     </section>
     <dialog class="month-dialog" id="${dialogId}">
       <div class="dialog-card month-dialog-card">
@@ -371,27 +448,37 @@ function monthPicker(bookId: number, monthKey: string): string {
   `;
 }
 
-function parseMonthKey(monthKey: string): { month: number; year: number } {
-  const match = /^(\d{4})-(\d{2})$/.exec(monthKey);
-  if (!match) {
-    const now = new Date();
-    return { month: now.getMonth() + 1, year: now.getFullYear() };
-  }
-
-  return {
-    month: Number(match[2]),
-    year: Number(match[1]),
-  };
-}
-
 function historyUrl(bookId: number, year: number, month: number): string {
   const monthKey = `${year}-${String(month).padStart(2, "0")}`;
-  return `/history?bookId=${bookId}&month=${encodeURIComponent(monthKey)}`;
+  return historyMonthUrl(bookId, monthKey);
+}
+
+function historyMonthUrl(bookId: number, monthKey: string): string {
+  return `/history/${encodeURIComponent(monthKey)}?bookId=${bookId}`;
 }
 
 function monthParts(monthKey: string): [number, number] {
-  const { month, year } = parseMonthKey(monthKey);
+  const { month, year } = parseMonthKey(monthKey) ?? { month: 1, year: 1970 };
   return [year, month];
+}
+
+function historyPagination(bookId: number, history: PaginatedHistoryMonths): string {
+  return `
+    <nav class="pagination" aria-label="历史月份分页">
+      <span>${history.page}/${history.totalPages} 页 · ${history.total} 个月</span>
+      <span class="pager-buttons">
+        ${historyPageLink(bookId, "上一页", history.page - 1, history.page <= 1)}
+        ${historyPageLink(bookId, "下一页", history.page + 1, history.page >= history.totalPages)}
+      </span>
+    </nav>
+  `;
+}
+
+function historyPageLink(bookId: number, label: string, page: number, disabled: boolean): string {
+  if (disabled) {
+    return `<span class="button secondary disabled">${escapeHtml(label)}</span>`;
+  }
+  return `<a class="button secondary" href="/history?bookId=${bookId}&page=${page}">${escapeHtml(label)}</a>`;
 }
 
 function summaryPanel(book: Book, summary: MonthSummary, settingsUrl: string): string {

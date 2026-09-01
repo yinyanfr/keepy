@@ -264,32 +264,43 @@ test("returns 404 when deleting a missing bill", async () => {
   assert.match(response.text, /记录不存在/);
 });
 
-test("uses bookId and month query params on the history page", async () => {
+test("renders paginated month overview for the selected book", async () => {
   const travel = { ...defaultBook, id: 2, isDefault: false, name: "旅行" };
-  const calls: Array<[number, string]> = [];
+  const calls: Array<[number, number]> = [];
   const app = buildTestApp({
     getBook: () => travel,
-    getMonthSummary: (_userId, bookId, range) => {
-      calls.push([bookId, range.key]);
-      return emptySummary(range.key);
-    },
-    getSpendingCategories: (_userId, bookId, range) => {
-      calls.push([bookId, range.key]);
-      return [];
+    getHistoryMonths: (_user, bookId, page) => {
+      calls.push([bookId, page ?? 1]);
+      return {
+        items: [
+          {
+            budget: 100,
+            expenseTotal: 12,
+            incomeTotal: 30,
+            monthKey: "2026-05",
+            remaining: 88,
+          },
+        ],
+        page: 2,
+        pageSize: 12,
+        total: 13,
+        totalPages: 2,
+      };
     },
   });
 
-  const response = await get(app, "/history?bookId=2&month=2026-05");
+  const response = await get(app, "/history?bookId=2&page=2");
 
   assert.equal(response.status, 200);
-  assert.deepEqual(calls, [
-    [2, "2026-05"],
-    [2, "2026-05"],
-  ]);
-  assert.match(response.text, /旅行/);
-  assert.match(response.text, /data-history-month-key="2026-05"/);
-  assert.match(response.text, /2026年5月/);
-  assert.doesNotMatch(response.text, /type="month"/);
+  assert.deepEqual(calls, [[2, 2]]);
+  assert.match(response.text, /data-history-overview/);
+  assert.match(response.text, /2026年 5月/);
+  assert.match(response.text, /<small>总支出<\/small><strong>¥?12<\/strong>/);
+  assert.match(response.text, /<small>总收入<\/small><strong>¥?30<\/strong>/);
+  assert.match(response.text, /<small>预算<\/small><strong>¥?100<\/strong>/);
+  assert.match(response.text, /<small>结余<\/small><strong>¥?88<\/strong>/);
+  assert.match(response.text, /2\/2 页 · 13 个月/);
+  assert.match(response.text, /href="\/history\/2026-05\?bookId=2"/);
 });
 
 test("renders the selected month's income, expenses, and charts", async () => {
@@ -328,7 +339,7 @@ test("renders the selected month's income, expenses, and charts", async () => {
     getSpendingCategories: () => [{ amount: 12, percentage: 100, purpose: "吃饭" }],
   });
 
-  const response = await get(app, "/history?bookId=1&month=2026-06");
+  const response = await get(app, "/history/2026-06?bookId=1");
 
   assert.equal(response.status, 200);
   assert.match(response.text, /aria-label="所选月份收支汇总"/);
@@ -337,6 +348,35 @@ test("renders the selected month's income, expenses, and charts", async () => {
   assert.match(response.text, /data-chart-carousel/);
   assert.match(response.text, /每日总消费/);
   assert.doesNotMatch(response.text, /<span class="muted">¥<\/span>/);
+  assert.match(response.text, /编辑该月预算/);
+  assert.match(response.text, /href="\/history\?bookId=1"/);
+});
+
+test("redirects legacy month query links to the month detail page", async () => {
+  const response = await get(buildTestApp(), "/history?bookId=1&month=2026-06", "manual");
+
+  assert.equal(response.status, 302);
+  assert.equal(response.location, "/history/2026-06?bookId=1");
+});
+
+test("updates only the selected month's budget", async () => {
+  let updated: [number, string, number | null] | null = null;
+  const app = buildTestApp({
+    updateMonthlyBudget: (_userId, bookId, monthKey, budget) => {
+      updated = [bookId, monthKey, budget];
+    },
+  });
+
+  const response = await post(
+    app,
+    "/history/2026-05/budget?bookId=1",
+    "monthlyBudget=2500",
+    "manual",
+  );
+
+  assert.deepEqual(updated, [1, "2026-05", 2500]);
+  assert.equal(response.status, 302);
+  assert.equal(response.location, "/history/2026-05?bookId=1");
 });
 
 test("shows book monthly metrics on the book list", async () => {
@@ -464,7 +504,8 @@ function buildTestApp(
     ensureDefaultBook: () => defaultBook,
     getBook: () => defaultBook,
     getCurrentMonthSummary: () => emptySummary("2026-06"),
-    getHistory: () => [],
+    getHistoryMonths: () => ({ items: [], page: 1, pageSize: 12, total: 1, totalPages: 1 }),
+    getMonthlyBudget: () => null,
     getMonthSummary: () => emptySummary("2026-06"),
     getSpendingCategories: () => [],
     getUserByTelegramId: () => user,
@@ -506,6 +547,7 @@ function buildTestApp(
     }),
     setDefaultBook: () => defaultBook,
     updateBook: () => defaultBook,
+    updateMonthlyBudget: () => undefined,
     updateUserTimezone: () => user,
     ...overrides,
   } as unknown as KeepyService;
@@ -568,7 +610,7 @@ async function post(
   }
 }
 
-async function get(app: express.Express, path: string) {
+async function get(app: express.Express, path: string, redirect: "follow" | "manual" = "follow") {
   const server = app.listen(0);
 
   try {
@@ -577,9 +619,10 @@ async function get(app: express.Express, path: string) {
       throw new Error("Failed to start test server.");
     }
 
-    const response = await fetch(`http://127.0.0.1:${address.port}${path}`);
+    const response = await fetch(`http://127.0.0.1:${address.port}${path}`, { redirect });
 
     return {
+      location: response.headers.get("location"),
       status: response.status,
       text: await response.text(),
     };

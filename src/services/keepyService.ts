@@ -1,5 +1,12 @@
 import type { TelegramAuthUser } from "../lib/telegramAuth.js";
-import { getMonthRange, monthRangeFromKey, type MonthRange } from "../lib/dates.js";
+import {
+  getMonthRange,
+  monthDistance,
+  monthRangeFromKey,
+  parseMonthKey,
+  shiftMonthKey,
+  type MonthRange,
+} from "../lib/dates.js";
 import type { LedgerParseSuccess } from "../lib/money.js";
 import { defaultTimeZone, isCommonTimeZone } from "../lib/timezones.js";
 import { openDatabase, type SqliteDatabase } from "./database.js";
@@ -52,6 +59,22 @@ export interface MonthSummary {
 
 export interface PaginatedBills {
   items: Bill[];
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+}
+
+export interface HistoryMonthSummary {
+  budget: number | null;
+  expenseTotal: number;
+  incomeTotal: number;
+  monthKey: string;
+  remaining: number | null;
+}
+
+export interface PaginatedHistoryMonths {
+  items: HistoryMonthSummary[];
   page: number;
   pageSize: number;
   total: number;
@@ -193,7 +216,9 @@ export class KeepyService {
   constructor(private readonly db: SqliteDatabase) {}
 
   static fromPath(databasePath: string): KeepyService {
-    return new KeepyService(openDatabase(databasePath));
+    const service = new KeepyService(openDatabase(databasePath));
+    service.backfillMonthlyBudgets();
+    return service;
   }
 
   close(): void {
@@ -404,7 +429,18 @@ export class KeepyService {
             now,
           );
 
-        return Number(result.lastInsertRowid);
+        const bookId = Number(result.lastInsertRowid);
+        const user = this.getUser(userId);
+        if (!user) {
+          throw new Error("User not found.");
+        }
+        this.upsertMonthlyBudget(
+          bookId,
+          getMonthRange(new Date(), user.timezone).key,
+          options.monthlyBudget ?? null,
+          now,
+        );
+        return bookId;
       });
     } catch (error) {
       throw mapBookWriteError(error);
@@ -427,23 +463,34 @@ export class KeepyService {
 
   updateBook(userId: number, bookId: number, input: UpdateBookInput): Book {
     const now = new Date().toISOString();
+    const existingBook = this.getBook(userId, bookId);
+    const user = this.getUser(userId);
+    if (!existingBook || !user) {
+      throw new BookNotFoundError();
+    }
+    const currentMonthKey = getMonthRange(new Date(), user.timezone).key;
+    this.backfillBookMonthlyBudgets(user, existingBook, currentMonthKey);
+
     try {
-      this.db
-        .prepare(
-          `
-          UPDATE books
-          SET name = ?, currency = ?, monthly_budget = ?, updated_at = ?
-          WHERE user_id = ? AND id = ?
-        `,
-        )
-        .run(
-          cleanName(input.name),
-          cleanNullableText(input.currency),
-          input.monthlyBudget,
-          now,
-          userId,
-          bookId,
-        );
+      this.db.transaction(() => {
+        this.db
+          .prepare(
+            `
+            UPDATE books
+            SET name = ?, currency = ?, monthly_budget = ?, updated_at = ?
+            WHERE user_id = ? AND id = ?
+          `,
+          )
+          .run(
+            cleanName(input.name),
+            cleanNullableText(input.currency),
+            input.monthlyBudget,
+            now,
+            userId,
+            bookId,
+          );
+        this.upsertMonthlyBudget(bookId, currentMonthKey, input.monthlyBudget, now);
+      })();
     } catch (error) {
       throw mapBookWriteError(error);
     }
@@ -786,6 +833,103 @@ export class KeepyService {
     };
   }
 
+  getHistoryMonths(
+    user: User,
+    bookId: number,
+    page = 1,
+    date = new Date(),
+  ): PaginatedHistoryMonths {
+    const book = this.getBook(user.id, bookId);
+    if (!book) {
+      throw new BookNotFoundError();
+    }
+
+    const currentRange = getMonthRange(date, user.timezone);
+    this.backfillBookMonthlyBudgets(user, book, currentRange.key);
+    const earliest = this.db
+      .prepare<[number, number, string], { occurred_at: string | null }>(
+        `
+          SELECT MIN(occurred_at) AS occurred_at
+          FROM bills
+          WHERE user_id = ? AND book_id = ? AND occurred_at < ?
+        `,
+      )
+      .get(user.id, bookId, currentRange.end.toISOString())?.occurred_at;
+    const earliestMonthKey = earliest
+      ? getMonthRange(new Date(earliest), user.timezone).key
+      : currentRange.key;
+    const total = Math.max(monthDistance(currentRange.key, earliestMonthKey) + 1, 1);
+    const pageSize = 12;
+    const totalPages = Math.max(Math.ceil(total / pageSize), 1);
+    const safePage = Math.min(Math.max(page, 1), totalPages);
+    const startOffset = (safePage - 1) * pageSize;
+    const itemCount = Math.min(pageSize, total - startOffset);
+    const aggregate = this.db.prepare<
+      [number, number, string, string],
+      { expense_total: number; income_total: number }
+    >(
+      `
+        SELECT
+          COALESCE(SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END), 0) AS expense_total,
+          COALESCE(SUM(CASE WHEN amount < 0 THEN -amount ELSE 0 END), 0) AS income_total
+        FROM bills
+        WHERE user_id = ? AND book_id = ? AND occurred_at >= ? AND occurred_at < ?
+      `,
+    );
+
+    const items = Array.from({ length: itemCount }, (_, index) => {
+      const monthKey = shiftMonthKey(currentRange.key, -(startOffset + index));
+      const range = monthRangeFromKey(monthKey, user.timezone);
+      const totals = aggregate.get(
+        user.id,
+        bookId,
+        range.start.toISOString(),
+        range.end.toISOString(),
+      );
+      const expenseTotal = totals?.expense_total ?? 0;
+      const incomeTotal = totals?.income_total ?? 0;
+      const budget = this.getMonthlyBudget(user.id, bookId, monthKey);
+      return {
+        budget,
+        expenseTotal,
+        incomeTotal,
+        monthKey,
+        remaining: budget === null ? null : budget - expenseTotal,
+      };
+    });
+
+    return { items, page: safePage, pageSize, total, totalPages };
+  }
+
+  getMonthlyBudget(userId: number, bookId: number, monthKey: string): number | null {
+    const book = this.getBook(userId, bookId);
+    if (!book) {
+      throw new BookNotFoundError();
+    }
+    const row = this.db
+      .prepare<
+        [number, string],
+        { monthly_budget: number | null }
+      >("SELECT monthly_budget FROM book_monthly_budgets WHERE book_id = ? AND month_key = ?")
+      .get(bookId, monthKey);
+    return row ? row.monthly_budget : book.monthlyBudget;
+  }
+
+  updateMonthlyBudget(
+    userId: number,
+    bookId: number,
+    monthKey: string,
+    monthlyBudget: number | null,
+  ): void {
+    if (!parseMonthKey(monthKey)) {
+      throw new Error("Invalid month key.");
+    }
+    if (!this.getBook(userId, bookId)) {
+      throw new BookNotFoundError();
+    }
+    this.upsertMonthlyBudget(bookId, monthKey, monthlyBudget, new Date().toISOString());
+  }
+
   getCurrentMonthSummary(user: User, bookId: number, date = new Date()): MonthSummary {
     return this.getMonthSummary(user.id, bookId, getMonthRange(date, user.timezone));
   }
@@ -910,34 +1054,64 @@ export class KeepyService {
     }));
   }
 
-  getHistory(user: User): { bills: Bill[]; monthKey: string }[] {
-    const bills = this.db
-      .prepare<[number], BillRow>(
-        `
-        SELECT bills.*, books.name AS book_name, books.currency
-        FROM bills
-        JOIN books ON books.id = bills.book_id
-        WHERE bills.user_id = ?
-        ORDER BY bills.occurred_at DESC, bills.id DESC
-      `,
-      )
-      .all(user.id)
-      .map(mapBill);
-
-    const grouped = new Map<string, Bill[]>();
-    for (const bill of bills) {
-      const monthKey = getMonthRange(bill.occurredAt, user.timezone).key;
-      grouped.set(monthKey, [...(grouped.get(monthKey) ?? []), bill]);
+  private backfillMonthlyBudgets(): void {
+    const users = this.db.prepare<[], UserRow>("SELECT * FROM users").all().map(mapUser);
+    for (const user of users) {
+      const currentMonthKey = getMonthRange(new Date(), user.timezone).key;
+      for (const book of this.listBooks(user.id)) {
+        this.backfillBookMonthlyBudgets(user, book, currentMonthKey);
+      }
     }
-
-    return [...grouped.entries()].map(([monthKey, monthBills]) => ({
-      bills: monthBills,
-      monthKey,
-    }));
   }
 
-  getSummaryForMonthKey(user: User, bookId: number, monthKey: string): MonthSummary {
-    return this.getMonthSummary(user.id, bookId, monthRangeFromKey(monthKey, user.timezone));
+  private backfillBookMonthlyBudgets(user: User, book: Book, currentMonthKey: string): void {
+    const currentRange = monthRangeFromKey(currentMonthKey, user.timezone);
+    const earliest = this.db
+      .prepare<[number, number, string], { occurred_at: string | null }>(
+        `
+          SELECT MIN(occurred_at) AS occurred_at
+          FROM bills
+          WHERE user_id = ? AND book_id = ? AND occurred_at < ?
+        `,
+      )
+      .get(user.id, book.id, currentRange.end.toISOString())?.occurred_at;
+    const earliestMonthKey = earliest
+      ? getMonthRange(new Date(earliest), user.timezone).key
+      : currentMonthKey;
+    const monthCount = Math.max(monthDistance(currentMonthKey, earliestMonthKey) + 1, 1);
+    const now = new Date().toISOString();
+    const insert = this.db.prepare(
+      `
+        INSERT OR IGNORE INTO book_monthly_budgets (
+          book_id, month_key, monthly_budget, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?)
+      `,
+    );
+    this.db.transaction(() => {
+      for (let offset = 0; offset < monthCount; offset += 1) {
+        insert.run(book.id, shiftMonthKey(earliestMonthKey, offset), book.monthlyBudget, now, now);
+      }
+    })();
+  }
+
+  private upsertMonthlyBudget(
+    bookId: number,
+    monthKey: string,
+    monthlyBudget: number | null,
+    now: string,
+  ): void {
+    this.db
+      .prepare(
+        `
+          INSERT INTO book_monthly_budgets (
+            book_id, month_key, monthly_budget, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?)
+          ON CONFLICT(book_id, month_key) DO UPDATE SET
+            monthly_budget = excluded.monthly_budget,
+            updated_at = excluded.updated_at
+        `,
+      )
+      .run(bookId, monthKey, monthlyBudget, now, now);
   }
 
   private createBill(

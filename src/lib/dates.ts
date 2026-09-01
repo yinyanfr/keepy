@@ -4,6 +4,11 @@ export interface MonthRange {
   start: Date;
 }
 
+export interface MonthKeyParts {
+  month: number;
+  year: number;
+}
+
 function getTimeZoneParts(date: Date, timeZone: string): Intl.DateTimeFormatPart[] {
   return new Intl.DateTimeFormat("en-US", {
     day: "2-digit",
@@ -70,22 +75,51 @@ export function getMonthRange(date: Date, timeZone: string): MonthRange {
 }
 
 export function monthRangeFromKey(monthKey: string, timeZone: string): MonthRange {
-  const match = /^(\d{4})-(\d{2})$/.exec(monthKey);
-  if (!match) {
+  const parts = parseMonthKey(monthKey);
+  if (!parts) {
     return getMonthRange(new Date(), timeZone);
   }
 
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  if (!Number.isInteger(year) || month < 1 || month > 12) {
-    return getMonthRange(new Date(), timeZone);
-  }
+  const { month, year } = parts;
 
   return {
     end: zonedDateTimeToUtc(timeZone, year, month, 1),
     key: `${year}-${String(month).padStart(2, "0")}`,
     start: zonedDateTimeToUtc(timeZone, year, month - 1, 1),
   };
+}
+
+export function parseMonthKey(monthKey: string): MonthKeyParts | null {
+  const match = /^(\d{4})-(\d{2})$/.exec(monthKey);
+  if (!match) {
+    return null;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  return Number.isInteger(year) && year >= 1000 && month >= 1 && month <= 12
+    ? { month, year }
+    : null;
+}
+
+export function shiftMonthKey(monthKey: string, offset: number): string {
+  const parts = parseMonthKey(monthKey);
+  if (!parts || !Number.isInteger(offset)) {
+    throw new Error("Invalid month key or offset.");
+  }
+
+  const shifted = new Date(Date.UTC(parts.year, parts.month - 1 + offset, 1));
+  return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+export function monthDistance(newerMonthKey: string, olderMonthKey: string): number {
+  const newer = parseMonthKey(newerMonthKey);
+  const older = parseMonthKey(olderMonthKey);
+  if (!newer || !older) {
+    throw new Error("Invalid month key.");
+  }
+
+  return (newer.year - older.year) * 12 + newer.month - older.month;
 }
 
 export function formatDateTime(date: Date, timeZone: string): string {

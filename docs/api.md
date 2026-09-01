@@ -240,7 +240,16 @@ Unauthenticated:
 
 ### GET `/history`
 
-Returns grouped bill history for the current user.
+Returns a paginated monthly overview for one book, from the current month through the earliest bill
+month. Empty months inside that range are included.
+
+Query parameters:
+
+- `bookId`: optional book id; defaults to the user's default book
+- `page`: optional page number; each page contains up to 12 months
+
+Legacy requests with a valid `month=YYYY-MM` query parameter redirect to the canonical month detail
+route.
 
 Success:
 
@@ -251,6 +260,19 @@ Unauthenticated:
 
 - Status: `302 Found`
 - Redirect: `/`
+
+### GET `/history/:monthKey`
+
+Returns the existing charts and complete bill list for one month. `monthKey` must use `YYYY-MM`.
+
+Query parameters:
+
+- `bookId`: optional book id; defaults to the user's default book
+
+### POST `/history/:monthKey/budget`
+
+Updates the budget snapshot for only the selected book and month, then redirects to that month's
+detail page. An empty `monthlyBudget` clears the budget for that month.
 
 ## Telegram Webhook
 

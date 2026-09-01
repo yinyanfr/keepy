@@ -5,14 +5,15 @@ import { Router, type Request, type Response } from "express";
 import type { AppConfig } from "../configs/env.js";
 import {
   renderBooks,
-  renderHistory,
+  renderHistoryMonth,
+  renderHistoryOverview,
   renderHome,
   renderLogin,
   renderSettings,
   renderUserSettings,
 } from "../features/miniApp/pages.js";
 import { clientSourceCookieName, isTelegramClientSource } from "../lib/clientSource.js";
-import { getMonthRange, monthRangeFromKey } from "../lib/dates.js";
+import { getMonthRange, monthRangeFromKey, parseMonthKey } from "../lib/dates.js";
 import { readSessionValue, sessionCookieName } from "../lib/session.js";
 import {
   BillNotFoundError,
@@ -335,24 +336,84 @@ export function createMiniAppRouter(service: KeepyService, config: AppConfig): R
       return;
     }
 
-    const requestedMonth =
-      typeof req.query.month === "string"
-        ? req.query.month
-        : getMonthRange(new Date(), user.timezone).key;
-    const range = monthRangeFromKey(requestedMonth, user.timezone);
-    const summary = service.getMonthSummary(user.id, book.id, range);
-    const categories = service.getSpendingCategories(user.id, book.id, range);
+    if (typeof req.query.month === "string" && parseMonthKey(req.query.month)) {
+      res.redirect(`/history/${encodeURIComponent(req.query.month)}?bookId=${book.id}`);
+      return;
+    }
+
+    const pickerMonthKey = getMonthRange(new Date(), user.timezone).key;
+    const history = service.getHistoryMonths(user, book.id, queryNumber(req.query.page, 1));
 
     res.send(
-      renderHistory({
+      renderHistoryOverview({
         book,
-        categories,
+        history,
         isTelegramMiniApp: isTelegramMiniApp(req),
-        monthKey: summary.monthKey,
+        pickerMonthKey,
+        user,
+      }),
+    );
+  });
+
+  router.get("/history/:monthKey", (req: Request, res: Response) => {
+    const user = requireUser(req, res, service, config);
+    if (!user) {
+      return;
+    }
+    const monthKey = typeof req.params.monthKey === "string" ? req.params.monthKey : "";
+    if (!parseMonthKey(monthKey)) {
+      res.status(400).send("月份无效。");
+      return;
+    }
+    const bookId = typeof req.query.bookId === "string" ? numberParam(req.query.bookId) : null;
+    const book =
+      bookId === null ? service.ensureDefaultBook(user.id) : service.getBook(user.id, bookId);
+    if (!book) {
+      res.status(404).send("账本不存在。");
+      return;
+    }
+    const range = monthRangeFromKey(monthKey, user.timezone);
+    const summary = service.getMonthSummary(user.id, book.id, range);
+    res.send(
+      renderHistoryMonth({
+        book,
+        budget: service.getMonthlyBudget(user.id, book.id, monthKey),
+        categories: service.getSpendingCategories(user.id, book.id, range),
+        isTelegramMiniApp: isTelegramMiniApp(req),
+        monthKey,
         summary,
         user,
       }),
     );
+  });
+
+  router.post("/history/:monthKey/budget", (req: Request, res: Response) => {
+    const user = requireUser(req, res, service, config);
+    if (!user) {
+      return;
+    }
+    const monthKey = typeof req.params.monthKey === "string" ? req.params.monthKey : "";
+    const bookId = typeof req.query.bookId === "string" ? numberParam(req.query.bookId) : null;
+    if (!parseMonthKey(monthKey) || bookId === null) {
+      res.status(400).send("月份或账本无效。");
+      return;
+    }
+    const budgetText = textBody(req, "monthlyBudget");
+    const budget = budgetText === null ? null : Number(budgetText);
+    if (budgetText !== null && !Number.isFinite(budget)) {
+      res.status(400).send("预算无效。");
+      return;
+    }
+    try {
+      service.updateMonthlyBudget(user.id, bookId, monthKey, budget);
+      res.redirect(`/history/${encodeURIComponent(monthKey)}?bookId=${bookId}`);
+    } catch (error) {
+      if (error instanceof BookNotFoundError) {
+        res.status(404).send("账本不存在。");
+        return;
+      }
+      throw error;
+    }
   });
 
   router.get("/user/settings", (req: Request, res: Response) => {

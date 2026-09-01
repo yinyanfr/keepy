@@ -529,7 +529,7 @@
       }
 
       const route = routeInfo();
-      if (route.bookId) {
+      if (route.bookId && !route.historyOverview) {
         const month = route.month || new Date().toISOString().slice(0, 7);
         const monthResponse = await fetch(
           `/api/books/${route.bookId}/month?month=${encodeURIComponent(month)}`,
@@ -611,7 +611,16 @@
       const bookId = Number(params.get("bookId"));
       return {
         bookId: Number.isInteger(bookId) ? bookId : null,
-        month: params.get("month"),
+        historyOverview: true,
+      };
+    }
+    const historyMonthMatch = /^\/history\/(\d{4}-\d{2})$/.exec(path);
+    if (historyMonthMatch) {
+      const params = new URLSearchParams(location.search);
+      const bookId = Number(params.get("bookId"));
+      return {
+        bookId: Number.isInteger(bookId) ? bookId : null,
+        month: historyMonthMatch[1],
       };
     }
     return {};

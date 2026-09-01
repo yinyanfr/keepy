@@ -50,6 +50,20 @@ export function migrate(db: SqliteDatabase): void {
 
     CREATE INDEX IF NOT EXISTS idx_books_user ON books(user_id);
 
+    CREATE TABLE IF NOT EXISTS book_monthly_budgets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      book_id INTEGER NOT NULL,
+      month_key TEXT NOT NULL,
+      monthly_budget REAL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE,
+      UNIQUE(book_id, month_key)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_book_monthly_budgets_book
+      ON book_monthly_budgets(book_id, month_key);
+
     CREATE TABLE IF NOT EXISTS bills (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL,

@@ -1,8 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { isLedgerParseSuccess, parseLedgerMessage } from "../lib/money.js";
-import { getMonthRange } from "../lib/dates.js";
+import { getMonthRange, monthRangeFromKey, shiftMonthKey } from "../lib/dates.js";
+import { openDatabase } from "../services/database.js";
 import {
   BillNotFoundError,
   BookConflictError,
@@ -113,6 +117,145 @@ test("records bills and calculates monthly budget remaining", () => {
   assert.equal(summary.budgetRemaining, 108);
 
   service.close();
+});
+
+test("paginates contiguous history months and keeps monthly budget overrides isolated", () => {
+  const service = KeepyService.fromPath(":memory:");
+  const { user, defaultBook } = service.ensureUser({
+    firstName: "Yan",
+    lastName: null,
+    photoUrl: null,
+    telegramId: 1010,
+    username: "yan",
+  });
+  service.updateBook(user.id, defaultBook.id, {
+    currency: "CNY",
+    monthlyBudget: 100,
+    name: defaultBook.name,
+  });
+  service.recordBillForBook(user, defaultBook.id, 12, "午饭", new Date("2026-09-10T04:00:00Z"));
+  service.recordBillForBook(user, defaultBook.id, -30, "退款", new Date("2026-09-11T04:00:00Z"));
+  service.recordBillForBook(user, defaultBook.id, 5, "旧记录", new Date("2025-08-01T04:00:00Z"));
+
+  const firstPage = service.getHistoryMonths(
+    user,
+    defaultBook.id,
+    1,
+    new Date("2026-09-15T04:00:00Z"),
+  );
+  const secondPage = service.getHistoryMonths(
+    user,
+    defaultBook.id,
+    2,
+    new Date("2026-09-15T04:00:00Z"),
+  );
+
+  assert.equal(firstPage.total, 14);
+  assert.equal(firstPage.totalPages, 2);
+  assert.equal(firstPage.items.length, 12);
+  assert.deepEqual(firstPage.items[0], {
+    budget: 100,
+    expenseTotal: 12,
+    incomeTotal: 30,
+    monthKey: "2026-09",
+    remaining: 88,
+  });
+  assert.deepEqual(firstPage.items[1], {
+    budget: 100,
+    expenseTotal: 0,
+    incomeTotal: 0,
+    monthKey: "2026-08",
+    remaining: 100,
+  });
+  assert.deepEqual(
+    secondPage.items.map((item) => item.monthKey),
+    ["2025-09", "2025-08"],
+  );
+
+  service.updateMonthlyBudget(user.id, defaultBook.id, "2026-08", 80);
+  assert.equal(service.getMonthlyBudget(user.id, defaultBook.id, "2026-08"), 80);
+  assert.equal(service.getMonthlyBudget(user.id, defaultBook.id, "2026-07"), 100);
+
+  const currentMonthKey = getMonthRange(new Date(), user.timezone).key;
+  service.updateBook(user.id, defaultBook.id, {
+    currency: "CNY",
+    monthlyBudget: 150,
+    name: defaultBook.name,
+  });
+  assert.equal(service.getMonthlyBudget(user.id, defaultBook.id, "2026-08"), 80);
+  assert.equal(service.getMonthlyBudget(user.id, defaultBook.id, currentMonthKey), 150);
+
+  service.close();
+});
+
+test("shows only the current month when a book has only future bills", () => {
+  const service = KeepyService.fromPath(":memory:");
+  const { user, defaultBook } = service.ensureUser({
+    firstName: "Yan",
+    lastName: null,
+    photoUrl: null,
+    telegramId: 1011,
+    username: "yan",
+  });
+  service.recordBillForBook(user, defaultBook.id, 10, "未来记录", new Date("2026-10-01T04:00:00Z"));
+
+  const history = service.getHistoryMonths(
+    user,
+    defaultBook.id,
+    99,
+    new Date("2026-09-15T04:00:00Z"),
+  );
+
+  assert.equal(history.page, 1);
+  assert.equal(history.total, 1);
+  assert.equal(history.items[0]?.monthKey, "2026-09");
+  service.close();
+});
+
+test("backfills existing books once and preserves edited snapshots after restart", () => {
+  const directory = mkdtempSync(join(tmpdir(), "keepy-budget-backfill-"));
+  const databasePath = join(directory, "keepy.sqlite");
+  try {
+    const db = openDatabase(databasePath);
+    const now = new Date().toISOString();
+    const currentMonthKey = getMonthRange(new Date(), "Asia/Shanghai").key;
+    const earliestMonthKey = shiftMonthKey(currentMonthKey, -2);
+    const occurredAt = monthRangeFromKey(earliestMonthKey, "Asia/Shanghai").start.toISOString();
+    db.prepare(
+      `
+        INSERT INTO users (
+          id, telegram_id, username, first_name, last_name, photo_url, timezone, created_at, updated_at
+        ) VALUES (1, 2001, 'yan', 'Yan', NULL, NULL, 'Asia/Shanghai', ?, ?)
+      `,
+    ).run(now, now);
+    db.prepare(
+      `
+        INSERT INTO books (
+          id, user_id, name, currency, monthly_budget, is_default, created_at, updated_at
+        ) VALUES (1, 1, '默认', 'CNY', 500, 1, ?, ?)
+      `,
+    ).run(now, now);
+    db.prepare(
+      `
+        INSERT INTO bills (user_id, book_id, amount, purpose, occurred_at, created_at)
+        VALUES (1, 1, 10, '旧记录', ?, ?)
+      `,
+    ).run(occurredAt, now);
+    db.close();
+
+    const firstStart = KeepyService.fromPath(databasePath);
+    assert.equal(firstStart.getMonthlyBudget(1, 1, earliestMonthKey), 500);
+    assert.equal(firstStart.getMonthlyBudget(1, 1, shiftMonthKey(earliestMonthKey, 1)), 500);
+    firstStart.updateMonthlyBudget(1, 1, earliestMonthKey, 300);
+    firstStart.close();
+
+    const secondStart = KeepyService.fromPath(databasePath);
+    assert.equal(secondStart.getMonthlyBudget(1, 1, earliestMonthKey), 300);
+    assert.equal(secondStart.getMonthlyBudget(1, 1, currentMonthKey), 500);
+    secondStart.close();
+  } finally {
+    rmSync(directory, { force: true, recursive: true });
+  }
 });
 
 test("rejects zero-amount ledger messages and direct bill inserts", () => {
